@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#003366" />
+  <title>Propuestas de Proyecto de Grado | UNELLEZ</title>
+  <link rel="manifest" href="./manifest.json" />
+  <link rel="stylesheet" href="./css/estilos.css" />
+</head>
+<body>
+  <div id="app" v-cloak>
+    <header class="topbar">
+      <h1>{{ tituloSistema }}</h1>
+      <span class="badge">{{ estadoConexion }}</span>
+    </header>
+
+    <main class="contenedor">
+      <section class="card">
+        <h2>Prueba de Reactividad Vue 3 + PWA</h2>
+        <p>Bienvenido, <strong>{{ usuarioPrueba }}</strong>.</p>
+        <input v-model="usuarioPrueba" placeholder="Escribe tu nombre para probar reactividad" />
+        <p class="info-sw">Estado del Service Worker: <strong>{{ swEstado }}</strong></p>
+      </section>
+    </main>
+  </div>
+
+  <!-- Vue.js 3 vía CDN (Sin Node.js) -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <!-- Punto de entrada modular de nuestra aplicación -->
+  <script type="module" src="./js/app.js"></script>
+</body>
+</html>

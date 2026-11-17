@@ -1,0 +1,18 @@
+{
+  "name": "Gestión de Propuestas de Grado - UNELLEZ",
+  "short_name": "Propuestas PG",
+  "description": "Aplicación Web Progresiva para la postulación, evaluación y votación de propuestas de Proyecto de Grado.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f4f6f9",
+  "theme_color": "#003366",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/3135/3135715.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
