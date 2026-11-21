@@ -1,102 +1,148 @@
-import { supabase } from './supabase.js';
+const { createApp } = Vue;
 
-async function probarLoginDocente() {
-  // 1. Iniciar sesión en Supabase Auth
-  const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-    email: '**********',
-    password: '**********'
-  });
+const sb = window.sbClient || supabase;
 
-  console.log('Resultado Auth:', authData);
-  console.log('Error Auth:', authError);
+createApp({
+  data() {
+    return {
+      enLinea: navigator.onLine,
+      cargandoInicial: true,
+      enviandoLogin: false,
+      correo: '',
+      password: '',
+      errorAuth: '',
+      usuarioAuth: null,
+      tipoUsuario: null, // 'docente' | 'estudiante' | null
+      perfilDocente: null,
+      rolesDocente: [],
+      seccionesDocente: [],
+      perfilEstudiante: null
+    };
+  },
+  computed: {
+    nombreMostrado() {
+      if (this.tipoUsuario === 'docente' && this.perfilDocente) {
+        return this.perfilDocente.nombre;
+      }
+      if (this.tipoUsuario === 'estudiante' && this.perfilEstudiante) {
+        return `${this.perfilEstudiante.nombre} ${this.perfilEstudiante.apellido || ''}`.trim();
+      }
+      return this.usuarioAuth?.email || 'Usuario';
+    }
+  },
+  async mounted() {
+    window.addEventListener('online', () => { this.enLinea = true; });
+    window.addEventListener('offline', () => { this.enLinea = false; });
 
-  // 2. Si inició sesión bien, consultar su perfil, roles y secciones
-  if (authData?.user) {
-    const { data: perfil, error: perfilError } = await supabase
-      .from('docentes')
-      .select('*')
-      .eq('id', authData.user.id)
-      .single();
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').catch((err) => {
+        console.warn('Error registrando Service Worker:', err);
+      });
+    }
 
-    console.log('Perfil Docente:', perfil);
-    console.log('Error Perfil:', perfilError);
+    const { data } = await sb.auth.getSession();
+    if (data?.session?.user) {
+      this.usuarioAuth = data.session.user;
+      await this.cargarPerfilYContexto(this.usuarioAuth.id);
+    }
+    this.cargandoInicial = false;
 
-    const { data: roles, error: rolesError } = await supabase
-      .from('asignaciones_roles')
-      .select('*')
-      .eq('docente_id', authData.user.id)
-      .eq('periodo_id', 1);
+    sb.auth.onAuthStateChange(async (_event, session) => {
+      this.usuarioAuth = session?.user || null;
+      if (this.usuarioAuth) {
+        await this.cargarPerfilYContexto(this.usuarioAuth.id);
+      } else {
+        this.limpiarContexto();
+      }
+    });
+  },
+  methods: {
+    limpiarContexto() {
+      this.tipoUsuario = null;
+      this.perfilDocente = null;
+      this.rolesDocente = [];
+      this.seccionesDocente = [];
+      this.perfilEstudiante = null;
+    },
+    async iniciarSesion() {
+      this.errorAuth = '';
+      this.enviandoLogin = true;
 
-    const { data: secciones, error: seccionesError } = await supabase
-      .from('secciones')
-      .select('*')
-      .eq('periodo_id', 1);
+      try {
+        const { data, error } = await sb.auth.signInWithPassword({
+          email: this.correo,
+          password: this.password
+        });
 
-    console.log('Roles en 2026-II:', roles, 'Error Roles:', rolesError);
-    console.log('Secciones en 2026-II:', secciones, 'Error Secciones:', seccionesError);
+        if (error) {
+          this.errorAuth = 'Correo o contraseña incorrectos.';
+          return;
+        }
 
-    const { data: propuestas, error: propuestasError } = await supabase
-      .from('propuestas')
-      .select(`
-        id,
-        titulo,
-        ronda,
-        etapa_actual,
-        estatus,
-        a_destiempo,
-        estudiantes (
-          id,
-          cedula,
-          nombre,
-          apellido,
-          correo,
+        this.usuarioAuth = data.user;
+        this.password = '';
+        await this.cargarPerfilYContexto(data.user.id);
+      } catch (err) {
+        console.error('Error inesperado en login:', err);
+        this.errorAuth = 'Ocurrió un error al intentar iniciar sesión.';
+      } finally {
+        this.enviandoLogin = false;
+      }
+    },
+    async cerrarSesion() {
+      await sb.auth.signOut();
+      this.limpiarContexto();
+      this.correo = '';
+      this.password = '';
+    },
+    async cargarPerfilYContexto(userId) {
+      this.limpiarContexto();
+
+      // 1. Verificar si es docente
+      const { data: docente } = await sb
+        .from('docentes')
+        .select('*')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (docente) {
+        this.tipoUsuario = 'docente';
+        this.perfilDocente = docente;
+
+        const { data: roles } = await sb
+          .from('asignaciones_roles')
+          .select('*')
+          .eq('docente_id', userId);
+
+        this.rolesDocente = roles || [];
+
+        const { data: secciones } = await sb
+          .from('secciones')
+          .select('*')
+          .eq('docente_id', userId);
+
+        this.seccionesDocente = secciones || [];
+        return;
+      }
+
+      // 2. Si no es docente, verificar si es estudiante
+      const { data: estudiante } = await sb
+        .from('estudiantes')
+        .select(`
+          *,
           secciones (
             id,
             codigo_seccion,
             periodo_id
           )
-        )
-      `);
+        `)
+        .eq('id', userId)
+        .maybeSingle();
 
-    console.log('Propuestas cargadas:', propuestas, 'Error Propuestas:', propuestasError);
-  }
-}
-
-//probarLoginDocente();
-const { createApp, ref, onMounted } = Vue;
-
-createApp({
-  setup() {
-    const tituloSistema = ref('Sistema de Propuestas de Grado - UNELLEZ');
-    const estadoConexion = ref(navigator.onLine ? 'En línea' : 'Sin conexión');
-    const usuarioPrueba = ref('Emanuel');
-    const swEstado = ref('Verificando...');
-
-    onMounted(() => {
-      // Escuchar cambios de conexión en tiempo real
-      window.addEventListener('online', () => (estadoConexion.value = 'En línea'));
-      window.addEventListener('offline', () => (estadoConexion.value = 'Sin conexión'));
-
-      // Registrar el Service Worker para habilitar la PWA
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker
-          .register('./sw.js')
-          .then(() => {
-            swEstado.value = 'Activo y listo para instalar (PWA OK)';
-          })
-          .catch((err) => {
-            swEstado.value = 'Error al registrar SW: ' + err.message;
-          });
-      } else {
-        swEstado.value = 'Navegador no compatible con Service Workers';
+      if (estudiante) {
+        this.tipoUsuario = 'estudiante';
+        this.perfilEstudiante = estudiante;
       }
-    });
-
-    return {
-      tituloSistema,
-      estadoConexion,
-      usuarioPrueba,
-      swEstado
-    };
+    }
   }
 }).mount('#app');
