@@ -1,3 +1,68 @@
+import { supabase } from './supabase.js';
+
+async function probarLoginDocente() {
+  // 1. Iniciar sesión en Supabase Auth
+  const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+    email: '**********',
+    password: '**********'
+  });
+
+  console.log('Resultado Auth:', authData);
+  console.log('Error Auth:', authError);
+
+  // 2. Si inició sesión bien, consultar su perfil, roles y secciones
+  if (authData?.user) {
+    const { data: perfil, error: perfilError } = await supabase
+      .from('docentes')
+      .select('*')
+      .eq('id', authData.user.id)
+      .single();
+
+    console.log('Perfil Docente:', perfil);
+    console.log('Error Perfil:', perfilError);
+
+    const { data: roles, error: rolesError } = await supabase
+      .from('asignaciones_roles')
+      .select('*')
+      .eq('docente_id', authData.user.id)
+      .eq('periodo_id', 1);
+
+    const { data: secciones, error: seccionesError } = await supabase
+      .from('secciones')
+      .select('*')
+      .eq('periodo_id', 1);
+
+    console.log('Roles en 2026-II:', roles, 'Error Roles:', rolesError);
+    console.log('Secciones en 2026-II:', secciones, 'Error Secciones:', seccionesError);
+
+    const { data: propuestas, error: propuestasError } = await supabase
+      .from('propuestas')
+      .select(`
+        id,
+        titulo,
+        ronda,
+        etapa_actual,
+        estatus,
+        a_destiempo,
+        estudiantes (
+          id,
+          cedula,
+          nombre,
+          apellido,
+          correo,
+          secciones (
+            id,
+            codigo_seccion,
+            periodo_id
+          )
+        )
+      `);
+
+    console.log('Propuestas cargadas:', propuestas, 'Error Propuestas:', propuestasError);
+  }
+}
+
+//probarLoginDocente();
 const { createApp, ref, onMounted } = Vue;
 
 createApp({
