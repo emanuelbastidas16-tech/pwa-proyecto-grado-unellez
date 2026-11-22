@@ -308,7 +308,7 @@
         <div v-else>
           <h2>Registro de Docente</h2>
           <p class="subtitle">
-            Registra tus datos individuales. Al terminar, quedarás en espera hasta que se te asigne un rol.
+            Registra tus datos individuales y formación académica. Al terminar, quedarás en espera hasta que se te asigne un rol.
           </p>
 
           <div v-if="errorAuth" class="alert-error">
@@ -317,36 +317,80 @@
 
           <form @submit.prevent="registrarDocente">
             <div class="field">
+              <label for="docNombre">Nombre</label>
+              <input
+                id="docNombre"
+                type="text"
+                v-model.trim="formRegistroDocente.nombre"
+                placeholder="Ej. María"
+                required
+              />
+            </div>
+
+            <div class="field">
+              <label for="docApellido">Apellido</label>
+              <input
+                id="docApellido"
+                type="text"
+                v-model.trim="formRegistroDocente.apellido"
+                placeholder="Ej. Pérez"
+                required
+              />
+            </div>
+
+            <div class="field">
               <label for="docCedula">Cédula</label>
               <input
                 id="docCedula"
                 type="text"
                 v-model.trim="formRegistroDocente.cedula"
-                placeholder="Ej. V-12345678"
+                placeholder="Ej. 12345678"
                 required
               />
             </div>
 
             <div class="field">
-              <label for="docNombre">Nombres</label>
-              <input
-                id="docNombre"
-                type="text"
-                v-model.trim="formRegistroDocente.nombre"
-                placeholder="Ej. María Elena"
-                required
-              />
-            </div>
+              <label for="docTituloInput">Títulos académicos (mínimo 1 obligatorio)</label>
+              <div style="display: flex; gap: 8px;">
+                <input
+                  id="docTituloInput"
+                  type="text"
+                  v-model.trim="nuevoTituloDocente"
+                  placeholder="Ej. Ingeniero en Informática, Magíster..."
+                  :required="formRegistroDocente.titulos_academicos.length === 0"
+                  @keydown.enter.prevent="agregarTituloDocente"
+                />
+                <button
+                  type="button"
+                  class="btn btn-secondary"
+                  style="white-space: nowrap;"
+                  @click="agregarTituloDocente"
+                >
+                  + Agregar
+                </button>
+              </div>
+              <small style="display: block; color: #64748b; font-size: 0.8rem; margin-top: 4px;">
+                Debes registrar al menos un título (licenciatura, ingeniería, maestría o doctorado).
+              </small>
 
-            <div class="field">
-              <label for="docApellido">Apellidos</label>
-              <input
-                id="docApellido"
-                type="text"
-                v-model.trim="formRegistroDocente.apellido"
-                placeholder="Ej. Pérez Rojas"
-                required
-              />
+              <div v-if="formRegistroDocente.titulos_academicos.length > 0" style="margin-top: 8px;">
+                <span
+                  v-for="(titulo, idx) in formRegistroDocente.titulos_academicos"
+                  :key="idx"
+                  class="role-tag"
+                  style="display: inline-flex; align-items: center; gap: 6px; margin-bottom: 4px;"
+                >
+                  {{ titulo }}
+                  <button
+                    type="button"
+                    @click="eliminarTituloDocente(idx)"
+                    style="background: none; border: none; color: #0369a1; font-weight: bold; cursor: pointer; font-size: 0.95rem; line-height: 1;"
+                    title="Quitar título"
+                  >
+                    &times;
+                  </button>
+                </span>
+              </div>
             </div>
 
             <div class="field">
@@ -366,8 +410,8 @@
                 id="docPassword"
                 type="password"
                 v-model="formRegistroDocente.password"
-                placeholder="Mínimo 6 caracteres"
-                minlength="6"
+                placeholder="Mínimo 8 caracteres"
+                minlength="8"
                 required
               />
             </div>
@@ -391,6 +435,9 @@
         <!-- Perfil Docente -->
         <div v-if="tipoUsuario === 'docente'" class="info-list">
           <p><strong>Tipo de cuenta:</strong> Docente</p>
+          <p v-if="perfilDocente && Array.isArray(perfilDocente.titulos_academicos) && perfilDocente.titulos_academicos.length > 0">
+            <strong>Títulos académicos:</strong> {{ perfilDocente.titulos_academicos.join(', ') }}
+          </p>
           <p v-if="perfilDocente && perfilDocente.es_superusuario">
             <span class="role-tag">Superusuario</span>
           </p>

@@ -21,10 +21,12 @@ createApp({
         correo: '',
         password: ''
       },
+      nuevoTituloDocente: '',
       formRegistroDocente: {
-        cedula: '',
         nombre: '',
         apellido: '',
+        cedula: '',
+        titulos_academicos: [],
         correo: '',
         password: ''
       },
@@ -67,6 +69,17 @@ createApp({
     cambiarModoAcceso(modo) {
       this.modoAcceso = modo;
       this.errorAuth = '';
+    },
+    agregarTituloDocente() {
+      const titulo = (this.nuevoTituloDocente || '').trim();
+      if (!titulo) return;
+      if (!this.formRegistroDocente.titulos_academicos.includes(titulo)) {
+        this.formRegistroDocente.titulos_academicos.push(titulo);
+      }
+      this.nuevoTituloDocente = '';
+    },
+    eliminarTituloDocente(indice) {
+      this.formRegistroDocente.titulos_academicos.splice(indice, 1);
     },
     async inicializarAuth() {
       if (!sb) {
@@ -141,6 +154,13 @@ createApp({
       this.cargandoAuth = true;
 
       try {
+        this.agregarTituloDocente();
+
+        if (this.formRegistroDocente.titulos_academicos.length === 0) {
+          this.errorAuth = 'Debes ingresar al menos un título académico para registrarte.';
+          return;
+        }
+
         const { data: authData, error: signUpError } = await sb.auth.signUp({
           email: this.formRegistroDocente.correo,
           password: this.formRegistroDocente.password
@@ -167,6 +187,7 @@ createApp({
             cedula: this.formRegistroDocente.cedula,
             nombre: this.formRegistroDocente.nombre,
             apellido: this.formRegistroDocente.apellido,
+            titulos_academicos: this.formRegistroDocente.titulos_academicos,
             correo: this.formRegistroDocente.correo,
             es_superusuario: false
           }]);
@@ -177,10 +198,12 @@ createApp({
           return;
         }
 
+        this.nuevoTituloDocente = '';
         this.formRegistroDocente = {
-          cedula: '',
           nombre: '',
           apellido: '',
+          cedula: '',
+          titulos_academicos: [],
           correo: '',
           password: ''
         };
