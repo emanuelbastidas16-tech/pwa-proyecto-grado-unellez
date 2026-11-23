@@ -498,7 +498,7 @@ createApp({
         .from('propuestas')
         .select('*')
         .eq('estudiante_id', estudianteId)
-        .order('id', { ascending: false });
+        .order('id', { ascending: true });
 
       if (error) {
         console.error('Error cargando propuestas del estudiante:', error);
