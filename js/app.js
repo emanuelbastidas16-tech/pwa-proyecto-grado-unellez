@@ -8,7 +8,9 @@ createApp({
       enLinea: navigator.onLine,
       cargandoSesion: true,
       cargandoAuth: false,
-      modoAcceso: 'login',
+      validandoToken: false,
+      modoAcceso: 'login', // 'login' | 'registro_docente' | 'registro_estudiante'
+      seccionInvitacion: null, // { id, codigo_seccion }
       usuarioAuth: null,
       tipoUsuario: null, // 'docente' | 'estudiante' | null
       perfilDocente: null,
@@ -27,6 +29,13 @@ createApp({
         apellido: '',
         cedula: '',
         titulos_academicos: [],
+        correo: '',
+        password: ''
+      },
+      formRegistroEstudiante: {
+        nombre: '',
+        apellido: '',
+        cedula: '',
         correo: '',
         password: ''
       },
@@ -70,6 +79,51 @@ createApp({
       this.modoAcceso = modo;
       this.errorAuth = '';
     },
+    limpiarParametroTokenUrl() {
+      const urlLimpia = `${window.location.origin}${window.location.pathname}`;
+      window.history.replaceState({}, document.title, urlLimpia);
+    },
+    salirInvitacionEstudiante() {
+      this.seccionInvitacion = null;
+      this.errorAuth = '';
+      this.modoAcceso = 'login';
+      this.limpiarParametroTokenUrl();
+    },
+    async verificarTokenInvitacionUrl() {
+      const params = new URLSearchParams(window.location.search);
+      const token = (params.get('token') || '').trim();
+      if (!token) return;
+
+      this.modoAcceso = 'registro_estudiante';
+      this.validandoToken = true;
+      this.errorAuth = '';
+      this.seccionInvitacion = null;
+
+      try {
+        const { data, error } = await sb.rpc('obtener_seccion_por_token', {
+          p_token: token
+        });
+
+        if (error) {
+          console.error('Error validando token de sección:', error);
+          this.errorAuth = 'No se pudo verificar el enlace de invitación de sección.';
+          return;
+        }
+
+        const seccion = Array.isArray(data) ? data[0] : data;
+        if (!seccion || !seccion.id) {
+          this.errorAuth = 'El enlace de invitación de sección no es válido o no existe.';
+          return;
+        }
+
+        this.seccionInvitacion = seccion;
+      } catch (err) {
+        console.error('Error inesperado validando token:', err);
+        this.errorAuth = 'Ocurrió un error al validar el enlace de sección.';
+      } finally {
+        this.validandoToken = false;
+      }
+    },
     agregarTituloDocente() {
       const titulo = (this.nuevoTituloDocente || '').trim();
       if (!titulo) return;
@@ -100,6 +154,7 @@ createApp({
         await this.cargarPerfilYContexto(this.usuarioAuth.id);
       } else {
         this.limpiarContexto();
+        await this.verificarTokenInvitacionUrl();
       }
 
       this.cargandoSesion = false;
@@ -213,6 +268,72 @@ createApp({
       } catch (err) {
         console.error('Error inesperado en registro docente:', err);
         this.errorAuth = 'Ocurrió un error inesperado durante el registro.';
+      } finally {
+        this.cargandoAuth = false;
+      }
+    },
+    async registrarEstudiante() {
+      this.errorAuth = '';
+
+      if (!this.seccionInvitacion?.id) {
+        this.errorAuth = 'No se detectó una sección válida para el registro.';
+        return;
+      }
+
+      this.cargandoAuth = true;
+
+      try {
+        const { data: authData, error: signUpError } = await sb.auth.signUp({
+          email: this.formRegistroEstudiante.correo,
+          password: this.formRegistroEstudiante.password
+        });
+
+        if (signUpError) {
+          this.errorAuth = `No se pudo crear la cuenta: ${signUpError.message}`;
+          return;
+        }
+
+        const nuevoUsuario = authData?.user;
+        const sesionActiva = authData?.session;
+
+        if (!nuevoUsuario || !sesionActiva) {
+          this.errorAuth =
+            'Cuenta creada, pero no se inició sesión automáticamente. Revisa la configuración de correo en Supabase Auth.';
+          return;
+        }
+
+        const { error: insertError } = await sb
+          .from('estudiantes')
+          .insert([{
+            id: nuevoUsuario.id,
+            nombre: this.formRegistroEstudiante.nombre,
+            apellido: this.formRegistroEstudiante.apellido,
+            cedula: this.formRegistroEstudiante.cedula,
+            correo: this.formRegistroEstudiante.correo,
+            seccion_id: this.seccionInvitacion.id
+          }]);
+
+        if (insertError) {
+          console.error('Error guardando perfil estudiante:', insertError);
+          this.errorAuth = `Error al guardar perfil de estudiante: ${insertError.message}`;
+          return;
+        }
+
+        this.formRegistroEstudiante = {
+          nombre: '',
+          apellido: '',
+          cedula: '',
+          correo: '',
+          password: ''
+        };
+        this.seccionInvitacion = null;
+        this.modoAcceso = 'login';
+        this.limpiarParametroTokenUrl();
+        this.usuarioAuth = nuevoUsuario;
+        await this.cargarPerfilYContexto(nuevoUsuario.id);
+      } catch (err) {
+        console.error('Error inesperado en registro estudiante:', err);
+        this.errorAuth = 'Ocurrió un error inesperado durante el registro del estudiante.';
       } finally {
         this.cargandoAuth = false;
       }
