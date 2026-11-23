@@ -1,6 +1,14 @@
 const { createApp } = Vue;
 
 const sb = window.sbClient;
+const MIN_PROPUESTAS_OBLIGATORIAS = 3;
+
+function crearBorradoresIniciales() {
+  return Array.from({ length: MIN_PROPUESTAS_OBLIGATORIAS }, () => ({
+    titulo: '',
+    descripcion: ''
+  }));
+}
 
 createApp({
   data() {
@@ -44,10 +52,7 @@ createApp({
       guardandoPropuesta: false,
       errorPropuesta: '',
       mensajePropuestaOk: '',
-      nuevaPropuesta: {
-        titulo: '',
-        descripcion: ''
-      }
+      borradoresPropuestas: crearBorradoresIniciales()
     };
   },
   computed: {
@@ -59,6 +64,39 @@ createApp({
         return `${this.perfilEstudiante.nombre || ''} ${this.perfilEstudiante.apellido || ''}`.trim() || this.usuarioAuth?.email;
       }
       return this.usuarioAuth?.email || 'Usuario';
+    },
+    fechaLimiteEfectivaSeccion() {
+      const sec = this.perfilEstudiante?.secciones;
+      if (!sec) return null;
+      return sec.fecha_prorroga || sec.fecha_limite || null;
+    },
+    entregaSeriaADestiempo() {
+      if (!this.fechaLimiteEfectivaSeccion) return false;
+      const limite = new Date(this.fechaLimiteEfectivaSeccion);
+      if (Number.isNaN(limite.getTime())) return false;
+      return new Date() > limite;
+    },
+    siguienteRondaEstudiante() {
+      if (!this.propuestasEstudiante.length) return 1;
+      return Math.max(...this.propuestasEstudiante.map(p => Number(p.ronda) || 1)) + 1;
+    },
+    puedeEnviarNuevaPropuesta() {
+      if (this.cargandoPropuestas) return true;
+      if (!this.propuestasEstudiante.length) return true;
+      const tienePendiente = this.propuestasEstudiante.some(p => p.estatus === 'pendiente');
+      const tieneAprobada = this.propuestasEstudiante.some(
+        p => p.estatus === 'aprobado' || p.estatus === 'aprobado_con_modificacion'
+      );
+      return !tienePendiente && !tieneAprobada;
+    },
+    motivoBloqueoNuevaPropuesta() {
+      if (this.propuestasEstudiante.some(p => p.estatus === 'pendiente')) {
+        return 'Ya tienes propuestas en revisión (estatus: Pendiente). Debes esperar el resultado de la evaluación antes de enviar nuevas propuestas.';
+      }
+      if (this.propuestasEstudiante.some(p => p.estatus === 'aprobado' || p.estatus === 'aprobado_con_modificacion')) {
+        return '¡Felicitaciones! Ya cuentas con una propuesta aprobada, por lo que no necesitas enviar nuevas propuestas.';
+      }
+      return '';
     }
   },
   mounted() {
@@ -88,6 +126,48 @@ createApp({
       this.errorAuth = '';
       this.modoAcceso = 'login';
       this.limpiarParametroTokenUrl();
+    },
+    agregarBloquePropuesta() {
+      this.borradoresPropuestas.push({ titulo: '', descripcion: '' });
+    },
+    eliminarBloquePropuesta(indice) {
+      if (indice < MIN_PROPUESTAS_OBLIGATORIAS) return;
+      this.borradoresPropuestas.splice(indice, 1);
+    },
+    formatearFecha(fechaIso) {
+      if (!fechaIso) return '';
+      const d = new Date(fechaIso);
+      if (Number.isNaN(d.getTime())) return fechaIso;
+      return d.toLocaleString('es-VE', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    },
+    textoEstatus(estatus) {
+      const mapa = {
+        pendiente: 'Pendiente de revisión',
+        aprobado: 'Aprobada',
+        aprobado_con_modificacion: 'Aprobada con modificación',
+        rechazado: 'Rechazada'
+      };
+      return mapa[estatus] || estatus || 'Pendiente';
+    },
+    claseBadgeEstatus(estatus) {
+      if (estatus === 'aprobado') return 'badge-aprobado';
+      if (estatus === 'aprobado_con_modificacion') return 'badge-modificacion';
+      if (estatus === 'rechazado') return 'badge-rechazado';
+      return 'badge-pendiente';
+    },
+    textoEtapa(etapa) {
+      const mapa = {
+        primer_filtro: 'Primer filtro (Docente de sección)',
+        comision: 'Evaluación de Comisión',
+        finalizado: 'Evaluación finalizada'
+      };
+      return mapa[etapa] || etapa || 'Primer filtro';
     },
     async verificarTokenInvitacionUrl() {
       const params = new URLSearchParams(window.location.search);
@@ -178,6 +258,7 @@ createApp({
       this.propuestasEstudiante = [];
       this.errorPropuesta = '';
       this.mensajePropuestaOk = '';
+      this.borradoresPropuestas = crearBorradoresIniciales();
     },
     async iniciarSesion() {
       this.errorAuth = '';
@@ -392,7 +473,7 @@ createApp({
       // 2. Si no es docente, verificar si es estudiante
       const { data: estudiante, error: errEstudiante } = await sb
         .from('estudiantes')
-        .select('*, secciones(id, codigo_seccion, periodo_id)')
+        .select('*, secciones(id, codigo_seccion, periodo_id, fecha_limite, fecha_prorroga)')
         .eq('id', userId)
         .maybeSingle();
 
@@ -426,39 +507,60 @@ createApp({
       }
       this.cargandoPropuestas = false;
     },
-    async crearPropuestaEstudiante() {
+    async crearPropuestasEstudiante() {
       this.errorPropuesta = '';
       this.mensajePropuestaOk = '';
 
       if (!this.usuarioAuth?.id) return;
+      if (!this.puedeEnviarNuevaPropuesta) {
+        this.errorPropuesta = this.motivoBloqueoNuevaPropuesta;
+        return;
+      }
 
-      this.guardandoPropuesta = true;
-      try {
-        const siguienteRonda = this.propuestasEstudiante.length > 0
-          ? Math.max(...this.propuestasEstudiante.map(p => Number(p.ronda) || 1)) + 1
-          : 1;
+      for (let i = 0; i < MIN_PROPUESTAS_OBLIGATORIAS; i++) {
+        const tituloOblig = (this.borradoresPropuestas[i]?.titulo || '').trim();
+        const descOblig = (this.borradoresPropuestas[i]?.descripcion || '').trim();
+        if (!tituloOblig || !descOblig) {
+          this.errorPropuesta = `Debes completar obligatoriamente el título y la descripción de las 3 propuestas (revisa la Propuesta ${i + 1}).`;
+          return;
+        }
+      }
 
-        const { error } = await sb
-          .from('propuestas')
-          .insert([{
-            estudiante_id: this.usuarioAuth.id,
-            titulo: this.nuevaPropuesta.titulo,
-            descripcion: this.nuevaPropuesta.descripcion,
-            ronda: siguienteRonda,
-            etapa_actual: 'primer_filtro',
-            estatus: 'pendiente',
-            a_destiempo: false
-          }]);
+      const propuestasCompletas = [];
+      for (let i = 0; i < this.borradoresPropuestas.length; i++) {
+        const titulo = (this.borradoresPropuestas[i].titulo || '').trim();
+        const descripcion = (this.borradoresPropuestas[i].descripcion || '').trim();
 
-        if (error) {
-          console.error('Error al guardar propuesta:', error);
-          this.errorPropuesta = `No se pudo guardar la propuesta: ${error.message}`;
+        if (!titulo || !descripcion) {
+          this.errorPropuesta = `En la Propuesta ${i + 1} debes completar tanto el título como la descripción.`;
           return;
         }
 
-        this.nuevaPropuesta.titulo = '';
-        this.nuevaPropuesta.descripcion = '';
-        this.mensajePropuestaOk = 'Propuesta registrada correctamente.';
+        propuestasCompletas.push({
+          estudiante_id: this.usuarioAuth.id,
+          titulo,
+          descripcion,
+          ronda: this.siguienteRondaEstudiante,
+          etapa_actual: 'primer_filtro',
+          estatus: 'pendiente',
+          a_destiempo: this.entregaSeriaADestiempo
+        });
+      }
+
+      this.guardandoPropuesta = true;
+      try {
+        const { error } = await sb
+          .from('propuestas')
+          .insert(propuestasCompletas);
+
+        if (error) {
+          console.error('Error al guardar propuestas:', error);
+          this.errorPropuesta = `No se pudieron guardar las propuestas: ${error.message}`;
+          return;
+        }
+
+        this.borradoresPropuestas = crearBorradoresIniciales();
+        this.mensajePropuestaOk = `${propuestasCompletas.length} propuestas registradas correctamente.`;
         await this.cargarPropuestasEstudiante(this.usuarioAuth.id);
       } finally {
         this.guardandoPropuesta = false;
