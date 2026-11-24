@@ -283,27 +283,6 @@
 
       <!-- VISTA 1: NO AUTENTICADO (Login, Autoregistro Docente o Invitación Estudiante) -->
       <div v-else-if="!usuarioAuth" class="card login-card">
-        <div v-if="modoAcceso !== 'registro_estudiante'" style="display: flex; gap: 8px; margin-bottom: 18px;">
-          <button
-            type="button"
-            class="btn"
-            :class="modoAcceso === 'login' ? 'btn-primary' : 'btn-secondary'"
-            style="flex: 1; padding: 8px 10px; font-size: 0.9rem;"
-            @click="cambiarModoAcceso('login')"
-          >
-            Iniciar sesión
-          </button>
-          <button
-            type="button"
-            class="btn"
-            :class="modoAcceso === 'registro_docente' ? 'btn-primary' : 'btn-secondary'"
-            style="flex: 1; padding: 8px 10px; font-size: 0.9rem;"
-            @click="cambiarModoAcceso('registro_docente')"
-          >
-            Registro Docente
-          </button>
-        </div>
-
         <!-- Subvista A: Iniciar sesión -->
         <div v-if="modoAcceso === 'login'">
           <h2>Iniciar sesión</h2>
@@ -344,6 +323,15 @@
               {{ cargandoAuth ? 'Ingresando...' : 'Ingresar' }}
             </button>
           </form>
+
+          <button
+            type="button"
+            class="btn btn-secondary"
+            style="width: 100%; margin-top: 10px;"
+            @click="cambiarModoAcceso('registro_docente')"
+          >
+            Registro Docente
+          </button>
         </div>
 
         <!-- Subvista B: Autoregistro individual de Docente -->
@@ -462,6 +450,15 @@
               {{ cargandoAuth ? 'Registrando...' : 'Completar registro de docente' }}
             </button>
           </form>
+
+          <button
+            type="button"
+            class="btn btn-secondary"
+            style="width: 100%; margin-top: 10px; font-size: 0.88rem;"
+            @click="cambiarModoAcceso('login')"
+          >
+            Volver a Iniciar sesión
+          </button>
         </div>
 
         <!-- Subvista C: Autoregistro individual de Estudiante por enlace de sección (?token=...) -->
