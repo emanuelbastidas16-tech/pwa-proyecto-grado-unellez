@@ -100,6 +100,7 @@
     input[type="text"],
     input[type="email"],
     input[type="password"],
+    input[type="datetime-local"],
     textarea {
       width: 100%;
       padding: 10px 12px;
@@ -140,6 +141,8 @@
     .btn-secondary {
       background-color: #e2e8f0;
       color: #1e293b;
+      padding: 8px 14px;
+      font-size: 0.88rem;
     }
 
     .btn-success {
@@ -290,6 +293,15 @@
       gap: 10px;
       color: #0f172a;
       padding: 2px 0;
+    }
+
+    .deadline-box {
+      background-color: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 10px;
+      margin-top: 10px;
+      font-size: 0.85rem;
     }
 
     .action-row {
@@ -713,7 +725,7 @@
             <div v-if="seccionesDocente.length > 0" style="margin-top: 14px;">
               <p><strong>Mis secciones asignadas:</strong></p>
               <p class="subtitle" style="margin-bottom: 8px;">
-                Haz clic en una sección para ver sus estudiantes con propuestas pendientes.
+                Haz clic en una sección para ver sus opciones y sus estudiantes con propuestas pendientes.
               </p>
 
               <div
@@ -736,7 +748,57 @@
                   </span>
                 </button>
 
-                <div v-if="sec.token_acceso" style="margin-top: 8px; font-size: 0.85rem;">
+                <!-- Estado actual de fecha límite + botón para abrir el selector solo al oprimirlo -->
+                <div v-if="seccionSeleccionadaId === sec.id" class="deadline-box">
+                  <div>
+                    <strong>Fecha límite de entrega:</strong>
+                    <span v-if="sec.fecha_limite" style="margin-left: 4px;">{{ formatearFecha(sec.fecha_limite) }}</span>
+                    <span v-else style="color: #64748b; margin-left: 4px;">No establecida</span>
+                    <span
+                      v-if="sec.fecha_limite && new Date() > new Date(sec.fecha_limite)"
+                      class="role-tag badge-rechazado"
+                      style="margin-top: 0; margin-left: 6px;"
+                    >
+                      Plazo cumplido (entregas a destiempo)
+                    </span>
+                  </div>
+
+                  <div class="action-row" style="margin-top: 8px;">
+                    <button
+                      type="button"
+                      class="btn btn-secondary"
+                      @click="alternarEdicionFechaSeccion(sec)"
+                    >
+                      {{ editandoFechaSeccionId === sec.id ? 'Cerrar opción de fecha límite' : (sec.fecha_limite ? 'Cambiar fecha límite' : 'Establecer fecha límite') }}
+                    </button>
+                  </div>
+
+                  <div v-if="editandoFechaSeccionId === sec.id" style="margin-top: 10px;">
+                    <div class="field" style="margin-bottom: 8px;">
+                      <label :for="'fechaLimite_' + sec.id" style="font-size: 0.82rem; margin-bottom: 4px;">
+                        Selecciona la fecha y hora límite de entrega:
+                      </label>
+                      <input
+                        :id="'fechaLimite_' + sec.id"
+                        type="datetime-local"
+                        v-model="fechasLimiteEdicion[sec.id]"
+                      />
+                    </div>
+
+                    <div class="action-row" style="margin-top: 6px;">
+                      <button
+                        type="button"
+                        class="btn btn-success"
+                        :disabled="guardandoFechaSeccionId === sec.id"
+                        @click="guardarFechaLimiteSeccion(sec)"
+                      >
+                        {{ guardandoFechaSeccionId === sec.id ? 'Guardando fecha...' : 'Guardar fecha límite' }}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div v-if="sec.token_acceso" style="margin-top: 10px; font-size: 0.85rem;">
                   <span style="color: #334155;">Enlace de inscripción para WhatsApp:</span>
                   <div style="background: #ffffff; border: 1px dashed #94a3b8; padding: 6px 8px; border-radius: 5px; margin-top: 4px; word-break: break-all; font-family: monospace;">
                     {{ construirEnlaceSeccion(sec.token_acceso) }}

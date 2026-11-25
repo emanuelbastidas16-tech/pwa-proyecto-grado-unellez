@@ -10,6 +10,14 @@ function crearBorradoresIniciales() {
   }));
 }
 
+function isoToDatetimeLocal(fechaIso) {
+  if (!fechaIso) return '';
+  const d = new Date(fechaIso);
+  if (Number.isNaN(d.getTime())) return '';
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 createApp({
   data() {
     return {
@@ -25,6 +33,9 @@ createApp({
       perfilEstudiante: null,
       rolesDocente: [],
       seccionesDocente: [],
+      fechasLimiteEdicion: {},
+      editandoFechaSeccionId: null,
+      guardandoFechaSeccionId: null,
       errorAuth: '',
       errorPerfil: '',
       formLogin: {
@@ -178,6 +189,51 @@ createApp({
       const urlWhatsapp = this.construirUrlApiWhatsapp(seccion);
       window.open(urlWhatsapp, '_blank', 'noopener,noreferrer');
     },
+    alternarEdicionFechaSeccion(seccion) {
+      if (this.editandoFechaSeccionId === seccion.id) {
+        this.editandoFechaSeccionId = null;
+      } else {
+        this.fechasLimiteEdicion[seccion.id] = isoToDatetimeLocal(seccion.fecha_limite);
+        this.editandoFechaSeccionId = seccion.id;
+      }
+    },
+    async guardarFechaLimiteSeccion(seccion) {
+      this.errorDocente = '';
+      this.mensajeDocenteOk = '';
+
+      const valorLocal = this.fechasLimiteEdicion[seccion.id];
+      if (!valorLocal) {
+        this.errorDocente = `Debes seleccionar una fecha límite para la sección ${seccion.codigo_seccion}.`;
+        return;
+      }
+
+      const fechaObj = new Date(valorLocal);
+      if (Number.isNaN(fechaObj.getTime())) {
+        this.errorDocente = 'La fecha límite ingresada no es válida.';
+        return;
+      }
+
+      this.guardandoFechaSeccionId = seccion.id;
+      try {
+        const fechaIso = fechaObj.toISOString();
+        const { error } = await sb
+          .from('secciones')
+          .update({ fecha_limite: fechaIso })
+          .eq('id', seccion.id);
+
+        if (error) {
+          console.error('Error actualizando fecha_limite de sección:', error);
+          this.errorDocente = `No se pudo guardar la fecha límite: ${error.message}`;
+          return;
+        }
+
+        seccion.fecha_limite = fechaIso;
+        this.editandoFechaSeccionId = null;
+        this.mensajeDocenteOk = `Fecha límite actualizada para la sección ${seccion.codigo_seccion}.`;
+      } finally {
+        this.guardandoFechaSeccionId = null;
+      }
+    },
     contarEstudiantesSeccion(seccionId) {
       return this.estudiantesConPropuestasPrimerFiltro.filter(
         est => Number(est.seccion_id) === Number(seccionId)
@@ -187,9 +243,11 @@ createApp({
       if (Number(this.seccionSeleccionadaId) === Number(seccionId)) {
         this.seccionSeleccionadaId = null;
         this.estudianteSeleccionadoId = null;
+        this.editandoFechaSeccionId = null;
       } else {
         this.seccionSeleccionadaId = seccionId;
         this.estudianteSeleccionadoId = null;
+        this.editandoFechaSeccionId = null;
       }
     },
     seleccionarEstudiantePrimerFiltro(estudianteId) {
@@ -333,6 +391,9 @@ createApp({
       this.perfilEstudiante = null;
       this.rolesDocente = [];
       this.seccionesDocente = [];
+      this.fechasLimiteEdicion = {};
+      this.editandoFechaSeccionId = null;
+      this.guardandoFechaSeccionId = null;
       this.errorPerfil = '';
       this.propuestasEstudiante = [];
       this.errorPropuesta = '';
@@ -511,6 +572,8 @@ createApp({
       this.perfilEstudiante = null;
       this.rolesDocente = [];
       this.seccionesDocente = [];
+      this.fechasLimiteEdicion = {};
+      this.editandoFechaSeccionId = null;
       this.propuestasEstudiante = [];
       this.propuestasPrimerFiltro = [];
       this.seccionSeleccionadaId = null;
@@ -554,6 +617,11 @@ createApp({
           console.error('Error consultando secciones:', errSecciones);
         } else {
           this.seccionesDocente = secciones || [];
+          const mapaFechas = {};
+          this.seccionesDocente.forEach(s => {
+            mapaFechas[s.id] = isoToDatetimeLocal(s.fecha_limite);
+          });
+          this.fechasLimiteEdicion = mapaFechas;
         }
 
         if (this.esDocenteDeSeccion) {
