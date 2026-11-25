@@ -50,7 +50,7 @@
     }
 
     .container {
-      max-width: 780px;
+      max-width: 820px;
       margin: 28px auto;
       padding: 0 16px 40px;
     }
@@ -140,6 +140,13 @@
     .btn-secondary {
       background-color: #e2e8f0;
       color: #1e293b;
+    }
+
+    .btn-success {
+      background-color: #0f766e;
+      color: #ffffff;
+      padding: 8px 14px;
+      font-size: 0.88rem;
     }
 
     .btn-danger {
@@ -256,6 +263,90 @@
       justify-content: flex-end;
       margin-bottom: 16px;
     }
+
+    .section-link-box {
+      background-color: #f8fafc;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      padding: 12px;
+      margin-top: 8px;
+      transition: border-color 0.15s ease, background-color 0.15s ease;
+    }
+
+    .section-link-box.active {
+      border-color: #0f3d6e;
+      background-color: #f0f9ff;
+    }
+
+    .section-header-btn {
+      width: 100%;
+      background: transparent;
+      border: none;
+      text-align: left;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      color: #0f172a;
+      padding: 2px 0;
+    }
+
+    .action-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+
+    .student-list-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .student-thread-item {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .student-select-btn {
+      width: 100%;
+      text-align: left;
+      background-color: #f8fafc;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      padding: 12px 14px;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      color: #0f172a;
+      transition: border-color 0.15s ease, background-color 0.15s ease;
+    }
+
+    .student-select-btn:hover {
+      border-color: #0f3d6e;
+      background-color: #f0f9ff;
+    }
+
+    .student-select-btn.active {
+      border-color: #0f3d6e;
+      background-color: #e0f2fe;
+      border-bottom-left-radius: 0;
+      border-bottom-right-radius: 0;
+    }
+
+    .student-proposals-panel {
+      border: 1px solid #0f3d6e;
+      border-top: none;
+      border-bottom-left-radius: 8px;
+      border-bottom-right-radius: 8px;
+      padding: 14px;
+      background-color: #ffffff;
+    }
   </style>
 </head>
 <body>
@@ -281,7 +372,7 @@
         <p class="subtitle" style="margin-bottom: 0;">Verificando sesión...</p>
       </div>
 
-      <!-- VISTA 1: NO AUTENTICADO (Login, Autoregistro Docente o Invitación Estudiante) -->
+      <!-- VISTA 1: NO AUTENTICADO -->
       <div v-else-if="!usuarioAuth" class="card login-card">
         <!-- Subvista A: Iniciar sesión -->
         <div v-if="modoAcceso === 'login'">
@@ -578,15 +669,17 @@
           {{ errorPerfil }}
         </div>
 
-        <!-- Perfil Docente -->
-        <div v-if="tipoUsuario === 'docente'" class="info-list">
-          <p><strong>Tipo de cuenta:</strong> Docente</p>
-          <p v-if="perfilDocente && Array.isArray(perfilDocente.titulos_academicos) && perfilDocente.titulos_academicos.length > 0">
-            <strong>Títulos académicos:</strong> {{ perfilDocente.titulos_academicos.join(', ') }}
-          </p>
-          <p v-if="perfilDocente && perfilDocente.es_superusuario">
-            <span class="role-tag">Superusuario</span>
-          </p>
+        <!-- Perfil Docente + Módulo del Docente de Sección -->
+        <div v-if="tipoUsuario === 'docente'">
+          <div class="info-list">
+            <p><strong>Tipo de cuenta:</strong> Docente</p>
+            <p v-if="perfilDocente && Array.isArray(perfilDocente.titulos_academicos) && perfilDocente.titulos_academicos.length > 0">
+              <strong>Títulos académicos:</strong> {{ perfilDocente.titulos_academicos.join(', ') }}
+            </p>
+            <p v-if="perfilDocente && perfilDocente.es_superusuario">
+              <span class="role-tag">Superusuario</span>
+            </p>
+          </div>
 
           <!-- Pantalla de espera cuando el docente aún no tiene roles asignados -->
           <div
@@ -601,7 +694,7 @@
             </p>
           </div>
 
-          <div v-else style="margin-top: 10px;">
+          <div v-else class="info-list">
             <p><strong>Roles asignados:</strong></p>
             <div v-if="rolesDocente.length > 0">
               <span
@@ -616,13 +709,169 @@
               Sin roles asignados aún.
             </p>
 
-            <p style="margin-top: 12px;"><strong>Secciones asignadas:</strong></p>
-            <ul v-if="seccionesDocente.length > 0">
-              <li v-for="sec in seccionesDocente" :key="sec.id">
-                {{ sec.codigo_seccion }} (ID: {{ sec.id }} — Período ID: {{ sec.periodo_id }})
-              </li>
-            </ul>
-            <p v-else style="color: #64748b;">Sin secciones asignadas directamente.</p>
+            <!-- Secciones asignadas por el Jefe de Subprograma -->
+            <div v-if="seccionesDocente.length > 0" style="margin-top: 14px;">
+              <p><strong>Mis secciones asignadas:</strong></p>
+              <p class="subtitle" style="margin-bottom: 8px;">
+                Haz clic en una sección para ver sus estudiantes con propuestas pendientes.
+              </p>
+
+              <div
+                v-for="sec in seccionesDocente"
+                :key="sec.id"
+                class="section-link-box"
+                :class="{ active: seccionSeleccionadaId === sec.id }"
+              >
+                <button
+                  type="button"
+                  class="section-header-btn"
+                  @click="seleccionarSeccionDocente(sec.id)"
+                >
+                  <div>
+                    <strong>Sección: {{ sec.codigo_seccion }}</strong>
+                    <span style="color: #64748b; font-size: 0.85rem;"> (Período ID: {{ sec.periodo_id }})</span>
+                  </div>
+                  <span class="role-tag" style="margin-top: 0;">
+                    {{ contarEstudiantesSeccion(sec.id) }} {{ contarEstudiantesSeccion(sec.id) === 1 ? 'estudiante' : 'estudiantes' }}
+                  </span>
+                </button>
+
+                <div v-if="sec.token_acceso" style="margin-top: 8px; font-size: 0.85rem;">
+                  <span style="color: #334155;">Enlace de inscripción para WhatsApp:</span>
+                  <div style="background: #ffffff; border: 1px dashed #94a3b8; padding: 6px 8px; border-radius: 5px; margin-top: 4px; word-break: break-all; font-family: monospace;">
+                    {{ construirEnlaceSeccion(sec.token_acceso) }}
+                  </div>
+                  <div class="action-row" style="margin-top: 8px;">
+                    <button
+                      type="button"
+                      class="btn btn-success"
+                      @click="enviarEnlacePorWhatsapp(sec)"
+                    >
+                      Enviar por WhatsApp
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Paso 2 y 3: Estudiantes de la sección seleccionada -> Propuestas justo debajo del estudiante seleccionado -->
+            <div v-if="esDocenteDeSeccion" style="margin-top: 18px;">
+              <hr class="divider" />
+
+              <div v-if="mensajeDocenteOk" class="alert-success">{{ mensajeDocenteOk }}</div>
+              <div v-if="errorDocente" class="alert-error">{{ errorDocente }}</div>
+
+              <p v-if="cargandoPropuestasDocente" class="subtitle">Cargando secciones, estudiantes y propuestas...</p>
+
+              <div v-else-if="!seccionSeleccionadaId" class="proposal-item">
+                <p class="subtitle" style="margin-bottom: 0;">
+                  Selecciona una de tus secciones asignadas arriba para ver la lista de estudiantes con propuestas pendientes.
+                </p>
+              </div>
+
+              <div v-else>
+                <h3 style="margin-bottom: 6px;">
+                  Estudiantes con propuestas pendientes — Sección {{ seccionSeleccionadaObj ? seccionSeleccionadaObj.codigo_seccion : '' }}
+                </h3>
+                <p class="subtitle">
+                  Haz clic en un estudiante para desplegar sus propuestas justo debajo.
+                </p>
+
+                <div v-if="estudiantesDeSeccionSeleccionada.length === 0" class="proposal-item">
+                  <p class="subtitle" style="margin-bottom: 0;">
+                    No hay estudiantes con propuestas pendientes en primer filtro en esta sección.
+                  </p>
+                </div>
+
+                <div v-else class="student-list-grid">
+                  <div
+                    v-for="est in estudiantesDeSeccionSeleccionada"
+                    :key="est.estudiante_id"
+                    class="student-thread-item"
+                  >
+                    <button
+                      type="button"
+                      class="student-select-btn"
+                      :class="{ active: estudianteSeleccionadoId === est.estudiante_id }"
+                      @click="seleccionarEstudiantePrimerFiltro(est.estudiante_id)"
+                    >
+                      <div>
+                        <strong style="font-size: 0.98rem;">{{ est.nombreCompleto }}</strong>
+                        <div style="font-size: 0.84rem; color: #475569; margin-top: 2px;">
+                          Cédula: {{ est.cedula }} — Sección: {{ est.codigoSeccion }}
+                        </div>
+                      </div>
+                      <span class="role-tag badge-pendiente" style="margin-top: 0;">
+                        {{ est.propuestas.length }} {{ est.propuestas.length === 1 ? 'propuesta' : 'propuestas' }}
+                      </span>
+                    </button>
+
+                    <!-- Propuestas justo debajo del estudiante seleccionado -->
+                    <div
+                      v-if="estudianteSeleccionadoId === est.estudiante_id"
+                      class="student-proposals-panel"
+                    >
+                      <div
+                        v-for="(prop, idx) in est.propuestas"
+                        :key="prop.id"
+                        class="proposal-item"
+                        style="margin-bottom: 10px;"
+                      >
+                        <div style="display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; align-items: center;">
+                          <strong>Propuesta {{ idx + 1 }} — {{ prop.titulo }}</strong>
+                          <div>
+                            <span class="role-tag badge-pendiente" style="margin-top: 0;">
+                              Ronda {{ prop.ronda }}
+                            </span>
+                            <span
+                              v-if="prop.a_destiempo"
+                              class="role-tag badge-rechazado"
+                              style="margin-top: 0;"
+                            >
+                              A destiempo
+                            </span>
+                          </div>
+                        </div>
+
+                        <p style="font-size: 0.92rem; color: #1e293b; margin-top: 8px; line-height: 1.45;">
+                          {{ prop.descripcion }}
+                        </p>
+
+                        <div class="field" style="margin-top: 12px; margin-bottom: 8px;">
+                          <label :for="'obsDocente_' + prop.id">Motivo del rechazo para el alumno (obligatorio al rechazar; no se envía a comisión)</label>
+                          <textarea
+                            :id="'obsDocente_' + prop.id"
+                            rows="2"
+                            v-model.trim="observacionesDocente[prop.id]"
+                            placeholder="Indica al alumno por qué se rechaza esta propuesta..."
+                          ></textarea>
+                        </div>
+
+                        <div class="action-row">
+                          <button
+                            type="button"
+                            class="btn btn-success"
+                            :disabled="evaluandoPropuestaId === prop.id"
+                            @click="evaluarPropuestaDocente(prop, 'comision')"
+                          >
+                            {{ evaluandoPropuestaId === prop.id ? 'Guardando...' : 'Enviar a Comisión' }}
+                          </button>
+
+                          <button
+                            type="button"
+                            class="btn btn-danger"
+                            :disabled="evaluandoPropuestaId === prop.id"
+                            @click="evaluarPropuestaDocente(prop, 'rechazar')"
+                          >
+                            {{ evaluandoPropuestaId === prop.id ? 'Guardando...' : 'Rechazar propuesta' }}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -645,7 +894,6 @@
 
           <hr class="divider" />
 
-          <!-- Avisos arriba, antes de Historial de mis propuestas de grado -->
           <div v-if="mensajePropuestaOk" class="alert-success">
             {{ mensajePropuestaOk }}
           </div>
@@ -717,7 +965,6 @@
             </div>
           </div>
 
-          <!-- Formulario de registro de propuestas (solo si no tiene pendientes ni aprobadas) -->
           <div v-if="!cargandoPropuestas && puedeEnviarNuevaPropuesta">
             <hr class="divider" />
             <h3 style="margin-bottom: 6px;">

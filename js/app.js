@@ -52,7 +52,15 @@ createApp({
       guardandoPropuesta: false,
       errorPropuesta: '',
       mensajePropuestaOk: '',
-      borradoresPropuestas: crearBorradoresIniciales()
+      borradoresPropuestas: crearBorradoresIniciales(),
+      propuestasPrimerFiltro: [],
+      seccionSeleccionadaId: null,
+      estudianteSeleccionadoId: null,
+      cargandoPropuestasDocente: false,
+      evaluandoPropuestaId: null,
+      observacionesDocente: {},
+      errorDocente: '',
+      mensajeDocenteOk: ''
     };
   },
   computed: {
@@ -64,6 +72,43 @@ createApp({
         return `${this.perfilEstudiante.nombre || ''} ${this.perfilEstudiante.apellido || ''}`.trim() || this.usuarioAuth?.email;
       }
       return this.usuarioAuth?.email || 'Usuario';
+    },
+    esDocenteDeSeccion() {
+      if (this.tipoUsuario !== 'docente') return false;
+      const tieneRolSeccion = this.rolesDocente.some(
+        r => r.rol === 'docente_seccion' || r.rol === 'docente'
+      );
+      return tieneRolSeccion || this.seccionesDocente.length > 0;
+    },
+    seccionSeleccionadaObj() {
+      if (!this.seccionSeleccionadaId) return null;
+      return this.seccionesDocente.find(s => s.id === this.seccionSeleccionadaId) || null;
+    },
+    estudiantesConPropuestasPrimerFiltro() {
+      const gruposMap = new Map();
+
+      for (const prop of this.propuestasPrimerFiltro) {
+        const key = prop.estudiante_id;
+        if (!gruposMap.has(key)) {
+          gruposMap.set(key, {
+            estudiante_id: key,
+            seccion_id: prop.seccion_id,
+            nombreCompleto: prop.estudianteNombre || 'Estudiante',
+            cedula: prop.estudianteCedula || '',
+            codigoSeccion: prop.codigoSeccion || '',
+            propuestas: []
+          });
+        }
+        gruposMap.get(key).propuestas.push(prop);
+      }
+
+      return Array.from(gruposMap.values());
+    },
+    estudiantesDeSeccionSeleccionada() {
+      if (!this.seccionSeleccionadaId) return [];
+      return this.estudiantesConPropuestasPrimerFiltro.filter(
+        est => Number(est.seccion_id) === Number(this.seccionSeleccionadaId)
+      );
     },
     fechaLimiteEfectivaSeccion() {
       const sec = this.perfilEstudiante?.secciones;
@@ -116,6 +161,40 @@ createApp({
     cambiarModoAcceso(modo) {
       this.modoAcceso = modo;
       this.errorAuth = '';
+    },
+    construirEnlaceSeccion(token) {
+      const urlBase = `${window.location.origin}${window.location.pathname}`;
+      return `${urlBase}?token=${encodeURIComponent(token)}`;
+    },
+    construirUrlApiWhatsapp(seccion) {
+      const enlace = this.construirEnlaceSeccion(seccion.token_acceso);
+      const mensaje =
+        `Hola, este es el enlace oficial de inscripción para la sección ${seccion.codigo_seccion} ` +
+        `en el Sistema de Propuestas de Grado - UNELLEZ:\n${enlace}`;
+      return `https://api.whatsapp.com/send?text=${encodeURIComponent(mensaje)}`;
+    },
+    enviarEnlacePorWhatsapp(seccion) {
+      if (!seccion?.token_acceso) return;
+      const urlWhatsapp = this.construirUrlApiWhatsapp(seccion);
+      window.open(urlWhatsapp, '_blank', 'noopener,noreferrer');
+    },
+    contarEstudiantesSeccion(seccionId) {
+      return this.estudiantesConPropuestasPrimerFiltro.filter(
+        est => Number(est.seccion_id) === Number(seccionId)
+      ).length;
+    },
+    seleccionarSeccionDocente(seccionId) {
+      if (Number(this.seccionSeleccionadaId) === Number(seccionId)) {
+        this.seccionSeleccionadaId = null;
+        this.estudianteSeleccionadoId = null;
+      } else {
+        this.seccionSeleccionadaId = seccionId;
+        this.estudianteSeleccionadoId = null;
+      }
+    },
+    seleccionarEstudiantePrimerFiltro(estudianteId) {
+      this.estudianteSeleccionadoId =
+        this.estudianteSeleccionadoId === estudianteId ? null : estudianteId;
     },
     limpiarParametroTokenUrl() {
       const urlLimpia = `${window.location.origin}${window.location.pathname}`;
@@ -259,6 +338,12 @@ createApp({
       this.errorPropuesta = '';
       this.mensajePropuestaOk = '';
       this.borradoresPropuestas = crearBorradoresIniciales();
+      this.propuestasPrimerFiltro = [];
+      this.seccionSeleccionadaId = null;
+      this.estudianteSeleccionadoId = null;
+      this.observacionesDocente = {};
+      this.errorDocente = '';
+      this.mensajeDocenteOk = '';
     },
     async iniciarSesion() {
       this.errorAuth = '';
@@ -427,6 +512,9 @@ createApp({
       this.rolesDocente = [];
       this.seccionesDocente = [];
       this.propuestasEstudiante = [];
+      this.propuestasPrimerFiltro = [];
+      this.seccionSeleccionadaId = null;
+      this.estudianteSeleccionadoId = null;
 
       // 1. Verificar si el usuario es docente
       const { data: docente, error: errDocente } = await sb
@@ -459,12 +547,17 @@ createApp({
         const { data: secciones, error: errSecciones } = await sb
           .from('secciones')
           .select('*')
-          .eq('docente_id', userId);
+          .eq('docente_id', userId)
+          .order('id', { ascending: true });
 
         if (errSecciones) {
           console.error('Error consultando secciones:', errSecciones);
         } else {
           this.seccionesDocente = secciones || [];
+        }
+
+        if (this.esDocenteDeSeccion) {
+          await this.cargarPropuestasPrimerFiltroDocente();
         }
 
         return;
@@ -491,6 +584,138 @@ createApp({
       }
 
       this.tipoUsuario = null;
+    },
+    async cargarPropuestasPrimerFiltroDocente() {
+      if (!this.seccionesDocente.length) {
+        this.propuestasPrimerFiltro = [];
+        this.estudianteSeleccionadoId = null;
+        return;
+      }
+
+      this.cargandoPropuestasDocente = true;
+      this.errorDocente = '';
+
+      try {
+        const mapaSecciones = {};
+        this.seccionesDocente.forEach(s => {
+          mapaSecciones[s.id] = s.codigo_seccion;
+        });
+
+        const idsSecciones = this.seccionesDocente.map(s => s.id);
+
+        const { data: estudiantesSec, error: errEst } = await sb
+          .from('estudiantes')
+          .select('id, nombre, apellido, cedula, seccion_id')
+          .in('seccion_id', idsSecciones);
+
+        if (errEst) {
+          console.error('Error consultando estudiantes de secciones:', errEst);
+          this.errorDocente = 'No se pudieron cargar los estudiantes de tus secciones.';
+          return;
+        }
+
+        if (!estudiantesSec || estudiantesSec.length === 0) {
+          this.propuestasPrimerFiltro = [];
+          this.estudianteSeleccionadoId = null;
+          return;
+        }
+
+        const mapaEstudiantes = {};
+        estudiantesSec.forEach(est => {
+          mapaEstudiantes[est.id] = {
+            seccion_id: est.seccion_id,
+            nombreCompleto: `${est.nombre || ''} ${est.apellido || ''}`.trim(),
+            cedula: est.cedula,
+            codigoSeccion: mapaSecciones[est.seccion_id] || ('ID ' + est.seccion_id)
+          };
+        });
+
+        const idsEstudiantes = estudiantesSec.map(e => e.id);
+
+        const { data: propuestas, error: errProp } = await sb
+          .from('propuestas')
+          .select('*')
+          .in('estudiante_id', idsEstudiantes)
+          .eq('etapa_actual', 'primer_filtro')
+          .eq('estatus', 'pendiente')
+          .order('id', { ascending: true });
+
+        if (errProp) {
+          console.error('Error consultando propuestas en primer filtro:', errProp);
+          this.errorDocente = 'No se pudieron cargar las propuestas en primer filtro.';
+          return;
+        }
+
+        this.propuestasPrimerFiltro = (propuestas || []).map(p => {
+          const estInfo = mapaEstudiantes[p.estudiante_id] || {};
+          if (this.observacionesDocente[p.id] === undefined) {
+            this.observacionesDocente[p.id] = p.observacion_docente || '';
+          }
+          return {
+            ...p,
+            seccion_id: estInfo.seccion_id || null,
+            estudianteNombre: estInfo.nombreCompleto || 'Estudiante',
+            estudianteCedula: estInfo.cedula || '',
+            codigoSeccion: estInfo.codigoSeccion || ''
+          };
+        });
+
+        const idsEstudiantesEnSeccion = new Set(
+          this.estudiantesDeSeccionSeleccionada.map(e => e.estudiante_id)
+        );
+        if (this.estudianteSeleccionadoId && !idsEstudiantesEnSeccion.has(this.estudianteSeleccionadoId)) {
+          this.estudianteSeleccionadoId = null;
+        }
+      } finally {
+        this.cargandoPropuestasDocente = false;
+      }
+    },
+    async evaluarPropuestaDocente(propuesta, decision) {
+      this.errorDocente = '';
+      this.mensajeDocenteOk = '';
+
+      const obs = (this.observacionesDocente[propuesta.id] || '').trim();
+      if (decision === 'rechazar' && !obs) {
+        this.errorDocente = 'Debes escribir el motivo del rechazo para indicarle al alumno por qué fue rechazada la propuesta.';
+        return;
+      }
+
+      this.evaluandoPropuestaId = propuesta.id;
+      try {
+        const payload = decision === 'comision'
+          ? {
+              etapa_actual: 'comision',
+              estatus: 'pendiente',
+              observacion_docente: null,
+              actualizado_en: new Date().toISOString()
+            }
+          : {
+              estatus: 'rechazado',
+              observacion_docente: obs,
+              actualizado_en: new Date().toISOString()
+            };
+
+        const { error } = await sb
+          .from('propuestas')
+          .update(payload)
+          .eq('id', propuesta.id);
+
+        if (error) {
+          console.error('Error evaluando propuesta en primer filtro:', error);
+          this.errorDocente = `No se pudo actualizar la propuesta: ${error.message}`;
+          return;
+        }
+
+        this.observacionesDocente[propuesta.id] = '';
+        this.mensajeDocenteOk =
+          decision === 'comision'
+            ? `La propuesta "${propuesta.titulo}" fue enviada a Comisión.`
+            : `La propuesta "${propuesta.titulo}" fue rechazada con su motivo para el alumno.`;
+
+        await this.cargarPropuestasPrimerFiltroDocente();
+      } finally {
+        this.evaluandoPropuestaId = null;
+      }
     },
     async cargarPropuestasEstudiante(estudianteId) {
       this.cargandoPropuestas = true;
