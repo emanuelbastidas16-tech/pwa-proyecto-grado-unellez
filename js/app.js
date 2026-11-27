@@ -23,6 +23,7 @@ createApp({
     return {
       enLinea: navigator.onLine,
       cargandoSesion: true,
+      cargandoPerfil: false,
       cargandoAuth: false,
       validandoToken: false,
       modoAcceso: 'login', // 'login' | 'registro_docente' | 'registro_estudiante'
@@ -368,6 +369,7 @@ createApp({
       this.usuarioAuth = sesionActual?.user || null;
 
       if (this.usuarioAuth) {
+        this.cargandoPerfil = true;
         await this.cargarPerfilYContexto(this.usuarioAuth.id);
       } else {
         this.limpiarContexto();
@@ -376,16 +378,33 @@ createApp({
 
       this.cargandoSesion = false;
 
-      sb.auth.onAuthStateChange(async (_event, session) => {
-        this.usuarioAuth = session?.user || null;
-        if (this.usuarioAuth) {
-          await this.cargarPerfilYContexto(this.usuarioAuth.id);
-        } else {
+      sb.auth.onAuthStateChange(async (event, session) => {
+        const nuevoUsuario = session?.user || null;
+
+        if (!nuevoUsuario) {
+          this.usuarioAuth = null;
           this.limpiarContexto();
+          return;
+        }
+
+        const mismoUsuarioYaCargado =
+          this.usuarioAuth?.id === nuevoUsuario.id &&
+          this.tipoUsuario !== null;
+
+        this.usuarioAuth = nuevoUsuario;
+
+        if (mismoUsuarioYaCargado && (event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION' || event === 'SIGNED_IN')) {
+          return;
+        }
+
+        if (!mismoUsuarioYaCargado) {
+          this.cargandoPerfil = true;
+          await this.cargarPerfilYContexto(nuevoUsuario.id);
         }
       });
     },
     limpiarContexto() {
+      this.cargandoPerfil = false;
       this.tipoUsuario = null;
       this.perfilDocente = null;
       this.perfilEstudiante = null;
@@ -423,6 +442,7 @@ createApp({
 
         this.usuarioAuth = data.user;
         this.formLogin.password = '';
+        this.cargandoPerfil = true;
         await this.cargarPerfilYContexto(this.usuarioAuth.id);
       } catch (err) {
         console.error('Error inesperado en login:', err);
@@ -491,6 +511,7 @@ createApp({
         };
         this.modoAcceso = 'login';
         this.usuarioAuth = nuevoUsuario;
+        this.cargandoPerfil = true;
         await this.cargarPerfilYContexto(nuevoUsuario.id);
       } catch (err) {
         console.error('Error inesperado en registro docente:', err);
@@ -557,6 +578,7 @@ createApp({
         this.modoAcceso = 'login';
         this.limpiarParametroTokenUrl();
         this.usuarioAuth = nuevoUsuario;
+        this.cargandoPerfil = true;
         await this.cargarPerfilYContexto(nuevoUsuario.id);
       } catch (err) {
         console.error('Error inesperado en registro estudiante:', err);
@@ -567,91 +589,87 @@ createApp({
     },
     async cargarPerfilYContexto(userId) {
       this.errorPerfil = '';
-      this.tipoUsuario = null;
-      this.perfilDocente = null;
-      this.perfilEstudiante = null;
-      this.rolesDocente = [];
-      this.seccionesDocente = [];
-      this.fechasLimiteEdicion = {};
-      this.editandoFechaSeccionId = null;
-      this.propuestasEstudiante = [];
-      this.propuestasPrimerFiltro = [];
-      this.seccionSeleccionadaId = null;
-      this.estudianteSeleccionadoId = null;
+      this.cargandoPerfil = true;
 
-      // 1. Verificar si el usuario es docente
-      const { data: docente, error: errDocente } = await sb
-        .from('docentes')
-        .select('*')
-        .eq('id', userId)
-        .maybeSingle();
-
-      if (errDocente) {
-        console.error('Error consultando docentes:', errDocente);
-        this.errorPerfil = 'Error al consultar el perfil de docente.';
-        return;
-      }
-
-      if (docente) {
-        this.tipoUsuario = 'docente';
-        this.perfilDocente = docente;
-
-        const { data: roles, error: errRoles } = await sb
-          .from('asignaciones_roles')
+      try {
+        // 1. Verificar si el usuario es docente
+        const { data: docente, error: errDocente } = await sb
+          .from('docentes')
           .select('*')
-          .eq('docente_id', userId);
+          .eq('id', userId)
+          .maybeSingle();
 
-        if (errRoles) {
-          console.error('Error consultando asignaciones_roles:', errRoles);
-        } else {
-          this.rolesDocente = roles || [];
+        if (errDocente) {
+          console.error('Error consultando docentes:', errDocente);
+          this.errorPerfil = 'Error al consultar el perfil de docente.';
+          return;
         }
 
-        const { data: secciones, error: errSecciones } = await sb
-          .from('secciones')
-          .select('*')
-          .eq('docente_id', userId)
-          .order('id', { ascending: true });
+        if (docente) {
+          this.tipoUsuario = 'docente';
+          this.perfilDocente = docente;
+          this.perfilEstudiante = null;
 
-        if (errSecciones) {
-          console.error('Error consultando secciones:', errSecciones);
-        } else {
-          this.seccionesDocente = secciones || [];
-          const mapaFechas = {};
-          this.seccionesDocente.forEach(s => {
-            mapaFechas[s.id] = isoToDatetimeLocal(s.fecha_limite);
-          });
-          this.fechasLimiteEdicion = mapaFechas;
+          const { data: roles, error: errRoles } = await sb
+            .from('asignaciones_roles')
+            .select('*')
+            .eq('docente_id', userId);
+
+          if (errRoles) {
+            console.error('Error consultando asignaciones_roles:', errRoles);
+          } else {
+            this.rolesDocente = roles || [];
+          }
+
+          const { data: secciones, error: errSecciones } = await sb
+            .from('secciones')
+            .select('*')
+            .eq('docente_id', userId)
+            .order('id', { ascending: true });
+
+          if (errSecciones) {
+            console.error('Error consultando secciones:', errSecciones);
+          } else {
+            this.seccionesDocente = secciones || [];
+            const mapaFechas = {};
+            this.seccionesDocente.forEach(s => {
+              mapaFechas[s.id] = isoToDatetimeLocal(s.fecha_limite);
+            });
+            this.fechasLimiteEdicion = mapaFechas;
+          }
+
+          if (this.esDocenteDeSeccion) {
+            await this.cargarPropuestasPrimerFiltroDocente();
+          }
+
+          return;
         }
 
-        if (this.esDocenteDeSeccion) {
-          await this.cargarPropuestasPrimerFiltroDocente();
+        // 2. Si no es docente, verificar si es estudiante
+        const { data: estudiante, error: errEstudiante } = await sb
+          .from('estudiantes')
+          .select('*, secciones(id, codigo_seccion, periodo_id, fecha_limite, fecha_prorroga)')
+          .eq('id', userId)
+          .maybeSingle();
+
+        if (errEstudiante) {
+          console.error('Error consultando estudiantes:', errEstudiante);
+          this.errorPerfil = 'Error al consultar el perfil de estudiante.';
+          return;
         }
 
-        return;
+        if (estudiante) {
+          this.tipoUsuario = 'estudiante';
+          this.perfilEstudiante = estudiante;
+          this.perfilDocente = null;
+          await this.cargarPropuestasEstudiante(userId);
+          return;
+        }
+
+        this.tipoUsuario = null;
+      } finally {
+        this.cargandoPerfil = false;
       }
-
-      // 2. Si no es docente, verificar si es estudiante
-      const { data: estudiante, error: errEstudiante } = await sb
-        .from('estudiantes')
-        .select('*, secciones(id, codigo_seccion, periodo_id, fecha_limite, fecha_prorroga)')
-        .eq('id', userId)
-        .maybeSingle();
-
-      if (errEstudiante) {
-        console.error('Error consultando estudiantes:', errEstudiante);
-        this.errorPerfil = 'Error al consultar el perfil de estudiante.';
-        return;
-      }
-
-      if (estudiante) {
-        this.tipoUsuario = 'estudiante';
-        this.perfilEstudiante = estudiante;
-        await this.cargarPropuestasEstudiante(userId);
-        return;
-      }
-
-      this.tipoUsuario = null;
     },
     async cargarPropuestasPrimerFiltroDocente() {
       if (!this.seccionesDocente.length) {

@@ -1,0 +1,254 @@
+<div>
+  <div class="info-list">
+    <p><strong>Tipo de cuenta:</strong> Docente</p>
+    <p v-if="perfilDocente && Array.isArray(perfilDocente.titulos_academicos) && perfilDocente.titulos_academicos.length > 0">
+      <strong>Títulos académicos:</strong> {{ perfilDocente.titulos_academicos.join(', ') }}
+    </p>
+    <p v-if="perfilDocente && perfilDocente.es_superusuario">
+      <span class="role-tag">Superusuario</span>
+    </p>
+  </div>
+
+  <!-- Pantalla de espera cuando el docente aún no tiene roles asignados -->
+  <div
+    v-if="perfilDocente && !perfilDocente.es_superusuario && rolesDocente.length === 0"
+    class="alert-waiting"
+  >
+    <h3 style="margin-bottom: 6px; color: #92400e;">Cuenta registrada — En espera de asignación de rol</h3>
+    <p style="font-size: 0.9rem; line-height: 1.45;">
+      Tu registro individual como docente ya quedó guardado. Debes esperar a que el
+      <strong>Superusuario</strong> (para roles de dirección) o el <strong>Jefe de Subprograma</strong>
+      (para roles operativos) te asignen un rol para habilitar tu módulo de trabajo.
+    </p>
+  </div>
+
+  <div v-else class="info-list">
+    <p><strong>Roles asignados:</strong></p>
+    <div v-if="rolesDocente.length > 0">
+      <span
+        v-for="r in rolesDocente"
+        :key="r.id"
+        class="role-tag"
+      >
+        {{ r.rol }} (Período ID: {{ r.periodo_id }})
+      </span>
+    </div>
+    <p v-else-if="!(perfilDocente && perfilDocente.es_superusuario)" style="color: #64748b;">
+      Sin roles asignados aún.
+    </p>
+
+    <!-- Secciones asignadas por el Jefe de Subprograma -->
+    <div v-if="seccionesDocente.length > 0" style="margin-top: 14px;">
+      <p><strong>Mis secciones asignadas:</strong></p>
+      <p class="subtitle" style="margin-bottom: 8px;">
+        Haz clic en una sección para ver sus opciones y sus estudiantes con propuestas pendientes.
+      </p>
+
+      <div
+        v-for="sec in seccionesDocente"
+        :key="sec.id"
+        class="section-link-box"
+        :class="{ active: seccionSeleccionadaId === sec.id }"
+      >
+        <button
+          type="button"
+          class="section-header-btn"
+          @click="seleccionarSeccionDocente(sec.id)"
+        >
+          <div>
+            <strong>Sección: {{ sec.codigo_seccion }}</strong>
+            <span style="color: #64748b; font-size: 0.85rem;"> (Período ID: {{ sec.periodo_id }})</span>
+          </div>
+          <span class="role-tag" style="margin-top: 0;">
+            {{ contarEstudiantesSeccion(sec.id) }} {{ contarEstudiantesSeccion(sec.id) === 1 ? 'estudiante' : 'estudiantes' }}
+          </span>
+        </button>
+
+        <!-- Estado actual de fecha límite + botón para abrir el selector solo al oprimirlo -->
+        <div v-if="seccionSeleccionadaId === sec.id" class="deadline-box">
+          <div>
+            <strong>Fecha límite de entrega:</strong>
+            <span v-if="sec.fecha_limite" style="margin-left: 4px;">{{ formatearFecha(sec.fecha_limite) }}</span>
+            <span v-else style="color: #64748b; margin-left: 4px;">No establecida</span>
+            <span
+              v-if="sec.fecha_limite && new Date() > new Date(sec.fecha_limite)"
+              class="role-tag badge-rechazado"
+              style="margin-top: 0; margin-left: 6px;"
+            >
+              Plazo cumplido (entregas a destiempo)
+            </span>
+          </div>
+
+          <div class="action-row" style="margin-top: 8px;">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              @click="alternarEdicionFechaSeccion(sec)"
+            >
+              {{ editandoFechaSeccionId === sec.id ? 'Cerrar opción de fecha límite' : (sec.fecha_limite ? 'Cambiar fecha límite' : 'Establecer fecha límite') }}
+            </button>
+          </div>
+
+          <div v-if="editandoFechaSeccionId === sec.id" style="margin-top: 10px;">
+            <div class="field" style="margin-bottom: 8px;">
+              <label :for="'fechaLimite_' + sec.id" style="font-size: 0.82rem; margin-bottom: 4px;">
+                Selecciona la fecha y hora límite de entrega:
+              </label>
+              <input
+                :id="'fechaLimite_' + sec.id"
+                type="datetime-local"
+                v-model="fechasLimiteEdicion[sec.id]"
+              />
+            </div>
+
+            <div class="action-row" style="margin-top: 6px;">
+              <button
+                type="button"
+                class="btn btn-success"
+                :disabled="guardandoFechaSeccionId === sec.id"
+                @click="guardarFechaLimiteSeccion(sec)"
+              >
+                {{ guardandoFechaSeccionId === sec.id ? 'Guardando fecha...' : 'Guardar fecha límite' }}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="sec.token_acceso" style="margin-top: 10px; font-size: 0.85rem;">
+          <span style="color: #334155;">Enlace de inscripción para WhatsApp:</span>
+          <div style="background: #ffffff; border: 1px dashed #94a3b8; padding: 6px 8px; border-radius: 5px; margin-top: 4px; word-break: break-all; font-family: monospace;">
+            {{ construirEnlaceSeccion(sec.token_acceso) }}
+          </div>
+          <div class="action-row" style="margin-top: 8px;">
+            <button
+              type="button"
+              class="btn btn-success"
+              @click="enviarEnlacePorWhatsapp(sec)"
+            >
+              Enviar por WhatsApp
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Paso 2 y 3: Estudiantes de la sección seleccionada -> Propuestas justo debajo del estudiante seleccionado -->
+    <div v-if="esDocenteDeSeccion" style="margin-top: 18px;">
+      <hr class="divider" />
+
+      <div v-if="mensajeDocenteOk" class="alert-success">{{ mensajeDocenteOk }}</div>
+      <div v-if="errorDocente" class="alert-error">{{ errorDocente }}</div>
+
+      <p v-if="cargandoPropuestasDocente" class="subtitle">Cargando secciones, estudiantes y propuestas...</p>
+
+      <div v-else-if="!seccionSeleccionadaId" class="proposal-item">
+        <p class="subtitle" style="margin-bottom: 0;">
+          Selecciona una de tus secciones asignadas arriba para ver la lista de estudiantes con propuestas pendientes.
+        </p>
+      </div>
+
+      <div v-else>
+        <h3 style="margin-bottom: 6px;">
+          Estudiantes con propuestas pendientes — Sección {{ seccionSeleccionadaObj ? seccionSeleccionadaObj.codigo_seccion : '' }}
+        </h3>
+        <p class="subtitle">
+          Haz clic en un estudiante para desplegar sus propuestas justo debajo.
+        </p>
+
+        <div v-if="estudiantesDeSeccionSeleccionada.length === 0" class="proposal-item">
+          <p class="subtitle" style="margin-bottom: 0;">
+            No hay estudiantes con propuestas pendientes en primer filtro en esta sección.
+          </p>
+        </div>
+
+        <div v-else class="student-list-grid">
+          <div
+            v-for="est in estudiantesDeSeccionSeleccionada"
+            :key="est.estudiante_id"
+            class="student-thread-item"
+          >
+            <button
+              type="button"
+              class="student-select-btn"
+              :class="{ active: estudianteSeleccionadoId === est.estudiante_id }"
+              @click="seleccionarEstudiantePrimerFiltro(est.estudiante_id)"
+            >
+              <div>
+                <strong style="font-size: 0.98rem;">{{ est.nombreCompleto }}</strong>
+                <div style="font-size: 0.84rem; color: #475569; margin-top: 2px;">
+                  Cédula: {{ est.cedula }} — Sección: {{ est.codigoSeccion }}
+                </div>
+              </div>
+              <span class="role-tag badge-pendiente" style="margin-top: 0;">
+                {{ est.propuestas.length }} {{ est.propuestas.length === 1 ? 'propuesta' : 'propuestas' }}
+              </span>
+            </button>
+
+            <!-- Propuestas justo debajo del estudiante seleccionado -->
+            <div
+              v-if="estudianteSeleccionadoId === est.estudiante_id"
+              class="student-proposals-panel"
+            >
+              <div
+                v-for="(prop, idx) in est.propuestas"
+                :key="prop.id"
+                class="proposal-item"
+                style="margin-bottom: 10px;"
+              >
+                <div style="display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; align-items: center;">
+                  <strong>Propuesta {{ idx + 1 }} — {{ prop.titulo }}</strong>
+                  <div>
+                    <span class="role-tag badge-pendiente" style="margin-top: 0;">
+                      Ronda {{ prop.ronda }}
+                    </span>
+                    <span
+                      v-if="prop.a_destiempo"
+                      class="role-tag badge-rechazado"
+                      style="margin-top: 0;"
+                    >
+                      A destiempo
+                    </span>
+                  </div>
+                </div>
+
+                <p style="font-size: 0.92rem; color: #1e293b; margin-top: 8px; line-height: 1.45;">
+                  {{ prop.descripcion }}
+                </p>
+
+                <div class="field" style="margin-top: 12px; margin-bottom: 8px;">
+                  <label :for="'obsDocente_' + prop.id">Motivo del rechazo para el alumno (obligatorio al rechazar; no se envía a comisión)</label>
+                  <textarea
+                    :id="'obsDocente_' + prop.id"
+                    rows="2"
+                    v-model.trim="observacionesDocente[prop.id]"
+                    placeholder="Indica al alumno por qué se rechaza esta propuesta..."
+                  ></textarea>
+                </div>
+
+                <div class="action-row">
+                  <button
+                    type="button"
+                    class="btn btn-success"
+                    :disabled="evaluandoPropuestaId === prop.id"
+                    @click="evaluarPropuestaDocente(prop, 'comision')"
+                  >
+                    {{ evaluandoPropuestaId === prop.id ? 'Guardando...' : 'Enviar a Comisión' }}
+                  </button>
+
+                  <button
+                    type="button"
+                    class="btn btn-danger"
+                    :disabled="evaluandoPropuestaId === prop.id"
+                    @click="evaluarPropuestaDocente(prop, 'rechazar')"
+                  >
+                    {{ evaluandoPropuestaId === prop.id ? 'Guardando...' : 'Rechazar propuesta' }}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

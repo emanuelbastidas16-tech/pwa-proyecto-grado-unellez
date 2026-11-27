@@ -1,0 +1,286 @@
+<div class="card login-card">
+  <!-- Subvista A: Iniciar sesión -->
+  <div v-if="modoAcceso === 'login'">
+    <h2>Iniciar sesión</h2>
+    <p class="subtitle">
+      Accede con tu correo electrónico y contraseña registrados.
+    </p>
+
+    <div v-if="errorAuth" class="alert-error">
+      {{ errorAuth }}
+    </div>
+
+    <form @submit.prevent="iniciarSesion">
+      <div class="field">
+        <label for="correo">Correo electrónico</label>
+        <input
+          id="correo"
+          type="email"
+          v-model.trim="formLogin.correo"
+          placeholder="ejemplo@unellez.edu.ve"
+          required
+          autocomplete="email"
+        />
+      </div>
+
+      <div class="field">
+        <label for="password">Contraseña</label>
+        <input
+          id="password"
+          type="password"
+          v-model="formLogin.password"
+          placeholder="Tu contraseña"
+          required
+          autocomplete="current-password"
+        />
+      </div>
+
+      <button type="submit" class="btn btn-primary" :disabled="cargandoAuth">
+        {{ cargandoAuth ? 'Ingresando...' : 'Ingresar' }}
+      </button>
+    </form>
+
+    <button
+      type="button"
+      class="btn btn-secondary"
+      style="width: 100%; margin-top: 10px;"
+      @click="cambiarModoAcceso('registro_docente')"
+    >
+      Registro Docente
+    </button>
+  </div>
+
+  <!-- Subvista B: Autoregistro individual de Docente -->
+  <div v-else-if="modoAcceso === 'registro_docente'">
+    <h2>Registro de Docente</h2>
+    <p class="subtitle">
+      Registra tus datos individuales y formación académica. Al terminar, quedarás en espera hasta que se te asigne un rol.
+    </p>
+
+    <div v-if="errorAuth" class="alert-error">
+      {{ errorAuth }}
+    </div>
+
+    <form @submit.prevent="registrarDocente">
+      <div class="field">
+        <label for="docNombre">Nombres</label>
+        <input
+          id="docNombre"
+          type="text"
+          v-model.trim="formRegistroDocente.nombre"
+          placeholder="Ej. María Elena"
+          required
+        />
+      </div>
+
+      <div class="field">
+        <label for="docApellido">Apellidos</label>
+        <input
+          id="docApellido"
+          type="text"
+          v-model.trim="formRegistroDocente.apellido"
+          placeholder="Ej. Pérez Rojas"
+          required
+        />
+      </div>
+
+      <div class="field">
+        <label for="docCedula">Cédula</label>
+        <input
+          id="docCedula"
+          type="text"
+          v-model.trim="formRegistroDocente.cedula"
+          placeholder="Ej. V-12345678"
+          required
+        />
+      </div>
+
+      <div class="field">
+        <label for="docTituloInput">Títulos académicos (mínimo 1 obligatorio)</label>
+        <div style="display: flex; gap: 8px;">
+          <input
+            id="docTituloInput"
+            type="text"
+            v-model.trim="nuevoTituloDocente"
+            placeholder="Ej. Ingeniero en Informática, Magíster..."
+            :required="formRegistroDocente.titulos_academicos.length === 0"
+            @keydown.enter.prevent="agregarTituloDocente"
+          />
+          <button
+            type="button"
+            class="btn btn-secondary"
+            style="white-space: nowrap;"
+            @click="agregarTituloDocente"
+          >
+            + Agregar
+          </button>
+        </div>
+        <small style="display: block; color: #64748b; font-size: 0.8rem; margin-top: 4px;">
+          Debes registrar al menos un título (licenciatura, ingeniería, maestría o doctorado).
+        </small>
+
+        <div v-if="formRegistroDocente.titulos_academicos.length > 0" style="margin-top: 8px;">
+          <span
+            v-for="(titulo, idx) in formRegistroDocente.titulos_academicos"
+            :key="idx"
+            class="role-tag"
+            style="display: inline-flex; align-items: center; gap: 6px; margin-bottom: 4px;"
+          >
+            {{ titulo }}
+            <button
+              type="button"
+              @click="eliminarTituloDocente(idx)"
+              style="background: none; border: none; color: #0369a1; font-weight: bold; cursor: pointer; font-size: 0.95rem; line-height: 1;"
+              title="Quitar título"
+            >
+              &times;
+            </button>
+          </span>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="docCorreo">Correo electrónico</label>
+        <input
+          id="docCorreo"
+          type="email"
+          v-model.trim="formRegistroDocente.correo"
+          placeholder="docente@unellez.edu.ve"
+          required
+        />
+      </div>
+
+      <div class="field">
+        <label for="docPassword">Contraseña</label>
+        <input
+          id="docPassword"
+          type="password"
+          v-model="formRegistroDocente.password"
+          placeholder="Mínimo 6 caracteres"
+          minlength="6"
+          required
+        />
+      </div>
+
+      <button type="submit" class="btn btn-primary" :disabled="cargandoAuth">
+        {{ cargandoAuth ? 'Registrando...' : 'Completar registro de docente' }}
+      </button>
+    </form>
+
+    <button
+      type="button"
+      class="btn btn-secondary"
+      style="width: 100%; margin-top: 10px; font-size: 0.88rem;"
+      @click="cambiarModoAcceso('login')"
+    >
+      Volver a Iniciar sesión
+    </button>
+  </div>
+
+  <!-- Subvista C: Autoregistro individual de Estudiante por enlace de sección (?token=...) -->
+  <div v-else-if="modoAcceso === 'registro_estudiante'">
+    <h2>Registro de Estudiante</h2>
+
+    <div v-if="validandoToken" class="subtitle">
+      Verificando enlace de invitación de sección...
+    </div>
+
+    <div v-else-if="!seccionInvitacion">
+      <div class="alert-error">
+        {{ errorAuth || 'El enlace de invitación de sección no es válido o ha expirado.' }}
+      </div>
+      <button
+        type="button"
+        class="btn btn-secondary"
+        style="width: 100%;"
+        @click="salirInvitacionEstudiante"
+      >
+        Volver a Iniciar sesión
+      </button>
+    </div>
+
+    <div v-else>
+      <div class="alert-success">
+        Invitación válida para la sección: <strong>{{ seccionInvitacion.codigo_seccion }}</strong>
+      </div>
+      <p class="subtitle">
+        Completa tus datos individuales para inscribirte en esta sección.
+      </p>
+
+      <div v-if="errorAuth" class="alert-error">
+        {{ errorAuth }}
+      </div>
+
+      <form @submit.prevent="registrarEstudiante">
+        <div class="field">
+          <label for="estNombre">Nombres</label>
+          <input
+            id="estNombre"
+            type="text"
+            v-model.trim="formRegistroEstudiante.nombre"
+            placeholder="Ej. Carlos Andrés"
+            required
+          />
+        </div>
+
+        <div class="field">
+          <label for="estApellido">Apellidos</label>
+          <input
+            id="estApellido"
+            type="text"
+            v-model.trim="formRegistroEstudiante.apellido"
+            placeholder="Ej. Mendoza Silva"
+            required
+          />
+        </div>
+
+        <div class="field">
+          <label for="estCedula">Cédula</label>
+          <input
+            id="estCedula"
+            type="text"
+            v-model.trim="formRegistroEstudiante.cedula"
+            placeholder="Ej. V-28123456"
+            required
+          />
+        </div>
+
+        <div class="field">
+          <label for="estCorreo">Correo electrónico</label>
+          <input
+            id="estCorreo"
+            type="email"
+            v-model.trim="formRegistroEstudiante.correo"
+            placeholder="estudiante@unellez.edu.ve"
+            required
+          />
+        </div>
+
+        <div class="field">
+          <label for="estPassword">Contraseña</label>
+          <input
+            id="estPassword"
+            type="password"
+            v-model="formRegistroEstudiante.password"
+            placeholder="Mínimo 6 caracteres"
+            minlength="6"
+            required
+          />
+        </div>
+
+        <button type="submit" class="btn btn-primary" :disabled="cargandoAuth">
+          {{ cargandoAuth ? 'Registrando...' : 'Completar registro de estudiante' }}
+        </button>
+      </form>
+
+      <button
+        type="button"
+        class="btn btn-secondary"
+        style="width: 100%; margin-top: 10px; font-size: 0.88rem;"
+        @click="salirInvitacionEstudiante"
+      >
+        ¿Ya tienes cuenta? Inicia sesión
+      </button>
+    </div>
+  </div>
+</div>

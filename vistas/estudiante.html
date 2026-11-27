@@ -1,0 +1,164 @@
+<div>
+  <div class="info-list">
+    <p><strong>Tipo de cuenta:</strong> Estudiante</p>
+    <p><strong>Cédula:</strong> {{ perfilEstudiante.cedula }}</p>
+    <p>
+      <strong>Sección:</strong>
+      {{ perfilEstudiante.secciones ? perfilEstudiante.secciones.codigo_seccion : ('ID ' + perfilEstudiante.seccion_id) }}
+    </p>
+    <p v-if="fechaLimiteEfectivaSeccion">
+      <strong>Fecha límite de entrega de la sección:</strong> {{ formatearFecha(fechaLimiteEfectivaSeccion) }}
+      <span v-if="entregaSeriaADestiempo" class="role-tag badge-pendiente" style="margin-top: 0; margin-left: 6px;">
+        Plazo vencido (se marcará a destiempo)
+      </span>
+    </p>
+  </div>
+
+  <hr class="divider" />
+
+  <div v-if="mensajePropuestaOk" class="alert-success">
+    {{ mensajePropuestaOk }}
+  </div>
+
+  <div v-if="!cargandoPropuestas && !puedeEnviarNuevaPropuesta" class="alert-waiting" style="margin-top: 0; margin-bottom: 16px;">
+    <p style="font-size: 0.9rem; line-height: 1.45;">
+      {{ motivoBloqueoNuevaPropuesta }}
+    </p>
+  </div>
+
+  <h3 style="margin-bottom: 10px;">Historial de mis propuestas de grado</h3>
+
+  <p v-if="cargandoPropuestas" class="subtitle">Cargando propuestas...</p>
+
+  <div v-else-if="propuestasEstudiante.length === 0" class="proposal-item">
+    <p class="subtitle" style="margin-bottom: 0;">
+      Aún no tienes propuestas registradas. Completa las 3 propuestas obligatorias abajo para enviar tu Ronda 1.
+    </p>
+  </div>
+
+  <div v-else>
+    <div
+      v-for="(prop, index) in propuestasEstudiante"
+      :key="prop.id"
+      class="proposal-item"
+    >
+      <div style="display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; align-items: center;">
+        <strong>Propuesta {{ index + 1 }} — {{ prop.titulo }}</strong>
+        <div>
+          <span
+            class="role-tag"
+            :class="claseBadgeEstatus(prop.estatus)"
+            style="margin-top: 0;"
+          >
+            {{ textoEstatus(prop.estatus) }}
+          </span>
+          <span
+            v-if="prop.a_destiempo"
+            class="role-tag badge-pendiente"
+            style="margin-top: 0;"
+          >
+            A destiempo
+          </span>
+        </div>
+      </div>
+
+      <p style="font-size: 0.9rem; color: #334155; margin-top: 8px; line-height: 1.45;">
+        {{ prop.descripcion }}
+      </p>
+
+      <p style="font-size: 0.82rem; color: #64748b; margin-top: 8px;">
+        Ronda: <strong>{{ prop.ronda }}</strong> | Etapa actual: <strong>{{ textoEtapa(prop.etapa_actual) }}</strong>
+        <span v-if="prop.creado_en"> | Enviada: {{ formatearFecha(prop.creado_en) }}</span>
+      </p>
+
+      <div
+        v-if="prop.observacion_docente"
+        style="background: #f0f9ff; border-left: 3px solid #0284c7; padding: 8px 10px; margin-top: 8px; font-size: 0.86rem; color: #0c4a6e;"
+      >
+        <strong>Observación del docente de sección:</strong> {{ prop.observacion_docente }}
+      </div>
+
+      <div
+        v-if="prop.observacion_comision"
+        style="background: #f0fdfa; border-left: 3px solid #0d9488; padding: 8px 10px; margin-top: 8px; font-size: 0.86rem; color: #115e59;"
+      >
+        <strong>Dictamen / Observación de la comisión:</strong> {{ prop.observacion_comision }}
+      </div>
+    </div>
+  </div>
+
+  <div v-if="!cargandoPropuestas && puedeEnviarNuevaPropuesta">
+    <hr class="divider" />
+    <h3 style="margin-bottom: 6px;">
+      Registrar propuestas de grado (Ronda {{ siguienteRondaEstudiante }})
+    </h3>
+    <p class="subtitle">
+      Debes completar obligatoriamente las <strong>3 propuestas</strong> con sus respectivas descripciones. Si deseas añadir otra, usa el botón <strong>+</strong> al final de la última propuesta.
+    </p>
+
+    <div v-if="errorPropuesta" class="alert-error">{{ errorPropuesta }}</div>
+
+    <form @submit.prevent="crearPropuestasEstudiante">
+      <div
+        v-for="(item, index) in borradoresPropuestas"
+        :key="index"
+        class="proposal-form-box"
+      >
+        <div class="proposal-form-header">
+          <strong>
+            Propuesta {{ index + 1 }}
+            <span style="color: #b91c1c; font-weight: 600; font-size: 0.82rem;">
+              {{ index < 3 ? '(Obligatoria)' : '(Adicional)' }}
+            </span>
+          </strong>
+          <button
+            v-if="index >= 3"
+            type="button"
+            class="btn btn-danger"
+            @click="eliminarBloquePropuesta(index)"
+          >
+            Quitar
+          </button>
+        </div>
+
+        <div class="field">
+          <label :for="'tituloPropuesta_' + index">Título de la propuesta {{ index + 1 }}</label>
+          <input
+            :id="'tituloPropuesta_' + index"
+            type="text"
+            v-model.trim="item.titulo"
+            placeholder="Ej. Aplicación web progresiva para la gestión de..."
+            required
+          />
+        </div>
+
+        <div class="field" style="margin-bottom: 0;">
+          <label :for="'descripcionPropuesta_' + index">Descripción de la propuesta {{ index + 1 }}</label>
+          <textarea
+            :id="'descripcionPropuesta_' + index"
+            rows="3"
+            v-model.trim="item.descripcion"
+            placeholder="Describe brevemente el problema, objetivo y alcance..."
+            required
+          ></textarea>
+        </div>
+      </div>
+
+      <div class="add-proposal-row">
+        <button
+          type="button"
+          class="btn btn-secondary"
+          style="padding: 8px 14px; font-size: 0.9rem;"
+          @click="agregarBloquePropuesta"
+          title="Agregar otra propuesta"
+        >
+          + Agregar propuesta
+        </button>
+      </div>
+
+      <button type="submit" class="btn btn-primary" :disabled="guardandoPropuesta">
+        {{ guardandoPropuesta ? 'Enviando propuestas...' : ('Enviar propuestas (Ronda ' + siguienteRondaEstudiante + ')') }}
+      </button>
+    </form>
+  </div>
+</div>

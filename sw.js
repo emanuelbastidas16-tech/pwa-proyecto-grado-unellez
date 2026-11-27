@@ -1,11 +1,14 @@
-const CACHE_NAME = 'pwa-pg-unellez-v1';
+const CACHE_NAME = 'pwa-pg-unellez-v2';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
   './manifest.json',
   './css/estilos.css',
   './js/app.js',
-  './js/supabase.js'
+  './js/supabase.js',
+  './vistas/acceso.html',
+  './vistas/docente.html',
+  './vistas/estudiante.html'
 ];
 
 // 1. Fase de Instalación: guarda los archivos base en caché
