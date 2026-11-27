@@ -72,6 +72,7 @@ createApp({
       evaluandoPropuestaId: null,
       observacionesDocente: {},
       propuestasComision: [],
+      estudianteComisionSeleccionadoId: null,
       cargandoPropuestasComision: false,
       evaluandoComisionId: null,
       observacionesComision: {},
@@ -96,14 +97,14 @@ createApp({
     esDocenteDeSeccion() {
       if (this.tipoUsuario !== 'docente') return false;
       const tieneRolSeccion = this.rolesDocente.some(
-        r => r.rol === 'docente_seccion' || r.rol === 'docente'
+        r => r.cargo === 'docente_proyecto_grado' || r.cargo === 'docente_seccion' || r.cargo === 'docente'
       );
       return tieneRolSeccion || this.seccionesDocente.length > 0;
     },
     esDocenteComision() {
       if (this.tipoUsuario !== 'docente') return false;
       return this.rolesDocente.some(
-        r => r.rol === 'comision' || r.rol === 'jurado' || r.rol === 'miembro_comision'
+        r => r.cargo === 'comision_jurado' || r.cargo === 'comision' || r.cargo === 'jurado'
       );
     },
     seccionSeleccionadaObj() {
@@ -135,6 +136,25 @@ createApp({
       return this.estudiantesConPropuestasPrimerFiltro.filter(
         est => Number(est.seccion_id) === Number(this.seccionSeleccionadaId)
       );
+    },
+    estudiantesConPropuestasComision() {
+      const gruposMap = new Map();
+
+      for (const prop of this.propuestasComision) {
+        const key = prop.estudiante_id;
+        if (!gruposMap.has(key)) {
+          gruposMap.set(key, {
+            estudiante_id: key,
+            nombreCompleto: prop.estudianteNombre || 'Estudiante',
+            cedula: prop.estudianteCedula || '',
+            codigoSeccion: prop.codigoSeccion || '',
+            propuestas: []
+          });
+        }
+        gruposMap.get(key).propuestas.push(prop);
+      }
+
+      return Array.from(gruposMap.values());
     },
     fechaLimiteEfectivaSeccion() {
       const sec = this.perfilEstudiante?.secciones;
@@ -283,6 +303,10 @@ createApp({
       this.estudianteSeleccionadoId =
         this.estudianteSeleccionadoId === estudianteId ? null : estudianteId;
     },
+    seleccionarEstudianteComision(estudianteId) {
+      this.estudianteComisionSeleccionadoId =
+        this.estudianteComisionSeleccionadoId === estudianteId ? null : estudianteId;
+    },
     async alternarHistorialDocente() {
       this.mostrarHistorialDocente = !this.mostrarHistorialDocente;
       this.errorDocente = '';
@@ -419,7 +443,8 @@ createApp({
     textoEtapa(etapa) {
       const mapa = {
         primer_filtro: 'Primer filtro (Docente de sección)',
-        comision: 'Evaluación de Comisión',
+        segundo_filtro: 'Segundo filtro (Comisión / Jurado)',
+        defensa_presencial: 'Defensa presencial',
         finalizado: 'Evaluación finalizada'
       };
       return mapa[etapa] || etapa || 'Primer filtro';
@@ -540,6 +565,7 @@ createApp({
       this.estudianteSeleccionadoId = null;
       this.observacionesDocente = {};
       this.propuestasComision = [];
+      this.estudianteComisionSeleccionadoId = null;
       this.cargandoPropuestasComision = false;
       this.evaluandoComisionId = null;
       this.observacionesComision = {};
@@ -899,7 +925,8 @@ createApp({
       try {
         const payload = decision === 'comision'
           ? {
-              etapa_actual: 'comision',
+              etapa_actual: 'segundo_filtro',
+              fase_votacion: 'segundo_filtro',
               estatus: 'pendiente',
               observacion_docente: null,
               actualizado_en: new Date().toISOString()
@@ -924,7 +951,7 @@ createApp({
         this.observacionesDocente[propuesta.id] = '';
         this.mensajeDocenteOk =
           decision === 'comision'
-            ? `La propuesta "${propuesta.titulo}" fue enviada a Comisión.`
+            ? `La propuesta "${propuesta.titulo}" fue enviada a Comisión (Segundo Filtro).`
             : `La propuesta "${propuesta.titulo}" fue rechazada con su motivo para el alumno.`;
 
         await this.cargarPropuestasPrimerFiltroDocente();
@@ -946,7 +973,7 @@ createApp({
         const { data: propuestas, error: errProp } = await sb
           .from('propuestas')
           .select('*')
-          .eq('etapa_actual', 'comision')
+          .eq('etapa_actual', 'segundo_filtro')
           .eq('estatus', 'pendiente')
           .order('id', { ascending: true });
 
@@ -958,6 +985,7 @@ createApp({
 
         if (!propuestas || propuestas.length === 0) {
           this.propuestasComision = [];
+          this.estudianteComisionSeleccionadoId = null;
           return;
         }
 
@@ -1011,6 +1039,14 @@ createApp({
             codigoSeccion: estInfo.codigoSeccion || ''
           };
         });
+
+        const idsVigentesComision = new Set(this.propuestasComision.map(p => p.estudiante_id));
+        if (
+          this.estudianteComisionSeleccionadoId &&
+          !idsVigentesComision.has(this.estudianteComisionSeleccionadoId)
+        ) {
+          this.estudianteComisionSeleccionadoId = null;
+        }
       } finally {
         this.cargandoPropuestasComision = false;
       }
@@ -1025,11 +1061,20 @@ createApp({
         return;
       }
 
+      const mapaVotos = {
+        aprobado: 'aprobar',
+        aprobado_con_modificacion: 'aprobar_con_modificacion',
+        rechazado: 'rechazado'
+      };
+
       this.evaluandoComisionId = propuesta.id;
       try {
         const payload = {
           estatus: estatusFinal,
           etapa_actual: 'finalizado',
+          fase_votacion: 'segundo_filtro',
+          voto: mapaVotos[estatusFinal] || 'rechazado',
+          jurado_id: this.usuarioAuth?.id || null,
           observacion_comision: obs || null,
           actualizado_en: new Date().toISOString()
         };
