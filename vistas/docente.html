@@ -132,6 +132,123 @@
       </div>
     </div>
 
+    <!-- Botón para ver el historial de propuestas de todos los alumnos -->
+    <div v-if="esDocenteDeSeccion" style="margin-top: 16px;">
+      <button
+        type="button"
+        class="btn btn-secondary"
+        @click="alternarHistorialDocente"
+      >
+        {{ mostrarHistorialDocente ? 'Ocultar historial de propuestas' : 'Ver historial de propuestas de alumnos' }}
+      </button>
+    </div>
+
+    <!-- Panel de historial de todos los estudiantes -->
+    <div v-if="esDocenteDeSeccion && mostrarHistorialDocente" style="margin-top: 14px;">
+      <div class="proposal-form-box" style="margin-bottom: 0;">
+        <h3 style="margin-bottom: 6px;">Historial de propuestas por estudiante</h3>
+        <p class="subtitle">
+          Selecciona un estudiante de la lista para ver todo su historial de propuestas y estados.
+        </p>
+
+        <p v-if="cargandoHistorialDocente" class="subtitle" style="margin-bottom: 0;">
+          Cargando lista de estudiantes e historial...
+        </p>
+
+        <div v-else-if="estudiantesHistorialDocente.length === 0" class="proposal-item" style="margin-bottom: 0;">
+          <p class="subtitle" style="margin-bottom: 0;">
+            No hay estudiantes registrados en tus secciones asignadas.
+          </p>
+        </div>
+
+        <div v-else class="student-list-grid" style="margin-bottom: 0;">
+          <div
+            v-for="estHist in estudiantesHistorialDocente"
+            :key="estHist.id"
+            class="student-thread-item"
+          >
+            <button
+              type="button"
+              class="student-select-btn"
+              :class="{ active: estudianteHistorialSeleccionadoId === estHist.id }"
+              @click="seleccionarEstudianteHistorial(estHist.id)"
+            >
+              <div>
+                <strong style="font-size: 0.98rem;">{{ estHist.nombreCompleto }}</strong>
+                <div style="font-size: 0.84rem; color: #475569; margin-top: 2px;">
+                  Cédula: {{ estHist.cedula }} — Sección: {{ estHist.codigoSeccion }}
+                </div>
+              </div>
+              <span class="role-tag" style="margin-top: 0;">
+                {{ estHist.propuestas.length }} {{ estHist.propuestas.length === 1 ? 'propuesta' : 'propuestas' }}
+              </span>
+            </button>
+
+            <div
+              v-if="estudianteHistorialSeleccionadoId === estHist.id"
+              class="student-proposals-panel"
+            >
+              <div v-if="estHist.propuestas.length === 0" class="proposal-item" style="margin-bottom: 0;">
+                <p class="subtitle" style="margin-bottom: 0;">
+                  Este estudiante aún no ha registrado propuestas.
+                </p>
+              </div>
+
+              <div
+                v-for="(propHist, idxHist) in estHist.propuestas"
+                :key="propHist.id"
+                class="proposal-item"
+                style="margin-bottom: 10px;"
+              >
+                <div style="display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; align-items: center;">
+                  <strong>Propuesta {{ idxHist + 1 }} — {{ propHist.titulo }}</strong>
+                  <div>
+                    <span
+                      class="role-tag"
+                      :class="claseBadgeEstatus(propHist.estatus)"
+                      style="margin-top: 0;"
+                    >
+                      {{ textoEstatus(propHist.estatus) }}
+                    </span>
+                    <span
+                      v-if="propHist.a_destiempo"
+                      class="role-tag badge-pendiente"
+                      style="margin-top: 0;"
+                    >
+                      A destiempo
+                    </span>
+                  </div>
+                </div>
+
+                <p style="font-size: 0.9rem; color: #334155; margin-top: 8px; line-height: 1.45;">
+                  {{ propHist.descripcion }}
+                </p>
+
+                <p style="font-size: 0.82rem; color: #64748b; margin-top: 8px;">
+                  Ronda: <strong>{{ propHist.ronda }}</strong> | Etapa actual: <strong>{{ textoEtapa(propHist.etapa_actual) }}</strong>
+                  <span v-if="propHist.creado_en"> | Enviada: {{ formatearFecha(propHist.creado_en) }}</span>
+                </p>
+
+                <div
+                  v-if="propHist.observacion_docente"
+                  style="background: #f0f9ff; border-left: 3px solid #0284c7; padding: 8px 10px; margin-top: 8px; font-size: 0.86rem; color: #0c4a6e;"
+                >
+                  <strong>Observación del docente de sección:</strong> {{ propHist.observacion_docente }}
+                </div>
+
+                <div
+                  v-if="propHist.observacion_comision"
+                  style="background: #f0fdfa; border-left: 3px solid #0d9488; padding: 8px 10px; margin-top: 8px; font-size: 0.86rem; color: #115e59;"
+                >
+                  <strong>Dictamen / Observación de la comisión:</strong> {{ propHist.observacion_comision }}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Paso 2 y 3: Estudiantes de la sección seleccionada -> Propuestas justo debajo del estudiante seleccionado -->
     <div v-if="esDocenteDeSeccion" style="margin-top: 18px;">
       <hr class="divider" />
@@ -246,6 +363,98 @@
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Módulo Comisión / Jurado (Segundo Filtro) -->
+    <div v-if="esDocenteComision" style="margin-top: 20px;">
+      <hr class="divider" />
+      <h3 style="margin-bottom: 6px;">Evaluación de Comisión / Jurado</h3>
+      <p class="subtitle">
+        Propuestas aprobadas en el primer filtro que esperan dictamen de comisión.
+      </p>
+
+      <p v-if="cargandoPropuestasComision" class="subtitle">
+        Cargando propuestas para comisión...
+      </p>
+
+      <div v-else-if="propuestasComision.length === 0" class="proposal-item">
+        <p class="subtitle" style="margin-bottom: 0;">
+          No hay propuestas pendientes en etapa de comisión en este momento.
+        </p>
+      </div>
+
+      <div v-else>
+        <div
+          v-for="propCom in propuestasComision"
+          :key="propCom.id"
+          class="proposal-item"
+        >
+          <div style="display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; align-items: center;">
+            <strong>{{ propCom.titulo }}</strong>
+            <div>
+              <span class="role-tag badge-pendiente" style="margin-top: 0;">
+                Ronda {{ propCom.ronda }}
+              </span>
+              <span
+                v-if="propCom.a_destiempo"
+                class="role-tag badge-rechazado"
+                style="margin-top: 0;"
+              >
+                A destiempo
+              </span>
+            </div>
+          </div>
+
+          <p style="font-size: 0.85rem; color: #475569; margin-top: 4px;">
+            Estudiante: <strong>{{ propCom.estudianteNombre }}</strong>
+            <span v-if="propCom.estudianteCedula"> ({{ propCom.estudianteCedula }})</span>
+            <span v-if="propCom.codigoSeccion"> — Sección: <strong>{{ propCom.codigoSeccion }}</strong></span>
+          </p>
+
+          <p style="font-size: 0.92rem; color: #1e293b; margin-top: 8px; line-height: 1.45;">
+            {{ propCom.descripcion }}
+          </p>
+
+          <div class="field" style="margin-top: 12px; margin-bottom: 8px;">
+            <label :for="'obsComision_' + propCom.id">Observación / Dictamen de la comisión</label>
+            <textarea
+              :id="'obsComision_' + propCom.id"
+              rows="2"
+              v-model.trim="observacionesComision[propCom.id]"
+              placeholder="Escribe las observaciones o modificaciones solicitadas por la comisión..."
+            ></textarea>
+          </div>
+
+          <div class="action-row">
+            <button
+              type="button"
+              class="btn btn-success"
+              :disabled="evaluandoComisionId === propCom.id"
+              @click="evaluarPropuestaComision(propCom, 'aprobado')"
+            >
+              {{ evaluandoComisionId === propCom.id ? 'Guardando...' : 'Aprobar' }}
+            </button>
+
+            <button
+              type="button"
+              class="btn btn-secondary"
+              :disabled="evaluandoComisionId === propCom.id"
+              @click="evaluarPropuestaComision(propCom, 'aprobado_con_modificacion')"
+            >
+              {{ evaluandoComisionId === propCom.id ? 'Guardando...' : 'Aprobar con modificación' }}
+            </button>
+
+            <button
+              type="button"
+              class="btn btn-danger"
+              :disabled="evaluandoComisionId === propCom.id"
+              @click="evaluarPropuestaComision(propCom, 'rechazado')"
+            >
+              {{ evaluandoComisionId === propCom.id ? 'Guardando...' : 'Rechazar' }}
+            </button>
           </div>
         </div>
       </div>

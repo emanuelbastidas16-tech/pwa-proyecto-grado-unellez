@@ -90,9 +90,12 @@
   <div v-if="!cargandoPropuestas && puedeEnviarNuevaPropuesta">
     <hr class="divider" />
     <h3 style="margin-bottom: 6px;">
-      Registrar propuestas de grado (Ronda {{ siguienteRondaEstudiante }})
+      {{ tienePropuestasRechazadasEstudiante ? ('Registrar propuesta de reemplazo (Ronda ' + siguienteRondaEstudiante + ')') : ('Registrar propuestas de grado (Ronda ' + siguienteRondaEstudiante + ')') }}
     </h3>
-    <p class="subtitle">
+    <p v-if="tienePropuestasRechazadasEstudiante" class="subtitle">
+      Una o más de tus propuestas anteriores fueron rechazadas y se mantienen en tu historial. Completa la <strong>Propuesta {{ numeroInicialNuevaPropuesta }}</strong> para continuar.
+    </p>
+    <p v-else class="subtitle">
       Debes completar obligatoriamente las <strong>3 propuestas</strong> con sus respectivas descripciones. Si deseas añadir otra, usa el botón <strong>+</strong> al final de la última propuesta.
     </p>
 
@@ -106,13 +109,13 @@
       >
         <div class="proposal-form-header">
           <strong>
-            Propuesta {{ index + 1 }}
+            Propuesta {{ numeroInicialNuevaPropuesta + index }}
             <span style="color: #b91c1c; font-weight: 600; font-size: 0.82rem;">
-              {{ index < 3 ? '(Obligatoria)' : '(Adicional)' }}
+              {{ index < cupoReemplazoPropuestas ? '(Obligatoria)' : '(Adicional)' }}
             </span>
           </strong>
           <button
-            v-if="index >= 3"
+            v-if="index >= cupoReemplazoPropuestas"
             type="button"
             class="btn btn-danger"
             @click="eliminarBloquePropuesta(index)"
@@ -122,7 +125,7 @@
         </div>
 
         <div class="field">
-          <label :for="'tituloPropuesta_' + index">Título de la propuesta {{ index + 1 }}</label>
+          <label :for="'tituloPropuesta_' + index">Título de la propuesta {{ numeroInicialNuevaPropuesta + index }}</label>
           <input
             :id="'tituloPropuesta_' + index"
             type="text"
@@ -133,7 +136,7 @@
         </div>
 
         <div class="field" style="margin-bottom: 0;">
-          <label :for="'descripcionPropuesta_' + index">Descripción de la propuesta {{ index + 1 }}</label>
+          <label :for="'descripcionPropuesta_' + index">Descripción de la propuesta {{ numeroInicialNuevaPropuesta + index }}</label>
           <textarea
             :id="'descripcionPropuesta_' + index"
             rows="3"
@@ -157,7 +160,7 @@
       </div>
 
       <button type="submit" class="btn btn-primary" :disabled="guardandoPropuesta">
-        {{ guardandoPropuesta ? 'Enviando propuestas...' : ('Enviar propuestas (Ronda ' + siguienteRondaEstudiante + ')') }}
+        {{ guardandoPropuesta ? 'Enviando propuestas...' : ('Enviar ' + (borradoresPropuestas.length === 1 ? 'propuesta' : 'propuestas') + ' (Ronda ' + siguienteRondaEstudiante + ')') }}
       </button>
     </form>
   </div>

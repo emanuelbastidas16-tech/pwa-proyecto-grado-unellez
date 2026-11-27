@@ -3,8 +3,8 @@ const { createApp } = Vue;
 const sb = window.sbClient;
 const MIN_PROPUESTAS_OBLIGATORIAS = 3;
 
-function crearBorradoresIniciales() {
-  return Array.from({ length: MIN_PROPUESTAS_OBLIGATORIAS }, () => ({
+function crearBorradoresIniciales(cantidad = MIN_PROPUESTAS_OBLIGATORIAS) {
+  return Array.from({ length: Math.max(1, cantidad) }, () => ({
     titulo: '',
     descripcion: ''
   }));
@@ -71,6 +71,14 @@ createApp({
       cargandoPropuestasDocente: false,
       evaluandoPropuestaId: null,
       observacionesDocente: {},
+      propuestasComision: [],
+      cargandoPropuestasComision: false,
+      evaluandoComisionId: null,
+      observacionesComision: {},
+      mostrarHistorialDocente: false,
+      cargandoHistorialDocente: false,
+      estudiantesHistorialDocente: [],
+      estudianteHistorialSeleccionadoId: null,
       errorDocente: '',
       mensajeDocenteOk: ''
     };
@@ -91,6 +99,12 @@ createApp({
         r => r.rol === 'docente_seccion' || r.rol === 'docente'
       );
       return tieneRolSeccion || this.seccionesDocente.length > 0;
+    },
+    esDocenteComision() {
+      if (this.tipoUsuario !== 'docente') return false;
+      return this.rolesDocente.some(
+        r => r.rol === 'comision' || r.rol === 'jurado' || r.rol === 'miembro_comision'
+      );
     },
     seccionSeleccionadaObj() {
       if (!this.seccionSeleccionadaId) return null;
@@ -132,6 +146,20 @@ createApp({
       const limite = new Date(this.fechaLimiteEfectivaSeccion);
       if (Number.isNaN(limite.getTime())) return false;
       return new Date() > limite;
+    },
+    propuestasNoRechazadasEstudiante() {
+      return this.propuestasEstudiante.filter(p => p.estatus !== 'rechazado');
+    },
+    tienePropuestasRechazadasEstudiante() {
+      return this.propuestasEstudiante.some(p => p.estatus === 'rechazado');
+    },
+    cupoReemplazoPropuestas() {
+      if (!this.propuestasEstudiante.length) return MIN_PROPUESTAS_OBLIGATORIAS;
+      const faltantesParaTres = MIN_PROPUESTAS_OBLIGATORIAS - this.propuestasNoRechazadasEstudiante.length;
+      return Math.max(1, faltantesParaTres);
+    },
+    numeroInicialNuevaPropuesta() {
+      return this.propuestasEstudiante.length + 1;
     },
     siguienteRondaEstudiante() {
       if (!this.propuestasEstudiante.length) return 1;
@@ -255,6 +283,87 @@ createApp({
       this.estudianteSeleccionadoId =
         this.estudianteSeleccionadoId === estudianteId ? null : estudianteId;
     },
+    async alternarHistorialDocente() {
+      this.mostrarHistorialDocente = !this.mostrarHistorialDocente;
+      this.errorDocente = '';
+
+      if (this.mostrarHistorialDocente) {
+        this.estudianteHistorialSeleccionadoId = null;
+        await this.cargarHistorialTodosEstudiantesDocente();
+      }
+    },
+    seleccionarEstudianteHistorial(estudianteId) {
+      this.estudianteHistorialSeleccionadoId =
+        this.estudianteHistorialSeleccionadoId === estudianteId ? null : estudianteId;
+    },
+    async cargarHistorialTodosEstudiantesDocente() {
+      if (!this.seccionesDocente.length) {
+        this.estudiantesHistorialDocente = [];
+        return;
+      }
+
+      this.cargandoHistorialDocente = true;
+      this.errorDocente = '';
+
+      try {
+        const mapaSecciones = {};
+        this.seccionesDocente.forEach(s => {
+          mapaSecciones[s.id] = s.codigo_seccion;
+        });
+
+        const idsSecciones = this.seccionesDocente.map(s => s.id);
+
+        const { data: estudiantesSec, error: errEst } = await sb
+          .from('estudiantes')
+          .select('id, nombre, apellido, cedula, seccion_id')
+          .in('seccion_id', idsSecciones)
+          .order('apellido', { ascending: true });
+
+        if (errEst) {
+          console.error('Error consultando estudiantes para historial:', errEst);
+          this.errorDocente = 'No se pudo cargar la lista de estudiantes para el historial.';
+          return;
+        }
+
+        if (!estudiantesSec || estudiantesSec.length === 0) {
+          this.estudiantesHistorialDocente = [];
+          return;
+        }
+
+        const idsEstudiantes = estudiantesSec.map(e => e.id);
+
+        const { data: todasPropuestas, error: errProp } = await sb
+          .from('propuestas')
+          .select('*')
+          .in('estudiante_id', idsEstudiantes)
+          .order('id', { ascending: true });
+
+        if (errProp) {
+          console.error('Error consultando propuestas para historial:', errProp);
+          this.errorDocente = 'No se pudo cargar el historial de propuestas.';
+          return;
+        }
+
+        const propuestasPorEstudiante = new Map();
+        (todasPropuestas || []).forEach(prop => {
+          if (!propuestasPorEstudiante.has(prop.estudiante_id)) {
+            propuestasPorEstudiante.set(prop.estudiante_id, []);
+          }
+          propuestasPorEstudiante.get(prop.estudiante_id).push(prop);
+        });
+
+        this.estudiantesHistorialDocente = estudiantesSec.map(est => ({
+          id: est.id,
+          seccion_id: est.seccion_id,
+          nombreCompleto: `${est.nombre || ''} ${est.apellido || ''}`.trim() || 'Estudiante',
+          cedula: est.cedula || '',
+          codigoSeccion: mapaSecciones[est.seccion_id] || ('ID ' + est.seccion_id),
+          propuestas: propuestasPorEstudiante.get(est.id) || []
+        }));
+      } finally {
+        this.cargandoHistorialDocente = false;
+      }
+    },
     limpiarParametroTokenUrl() {
       const urlLimpia = `${window.location.origin}${window.location.pathname}`;
       window.history.replaceState({}, document.title, urlLimpia);
@@ -269,8 +378,16 @@ createApp({
       this.borradoresPropuestas.push({ titulo: '', descripcion: '' });
     },
     eliminarBloquePropuesta(indice) {
-      if (indice < MIN_PROPUESTAS_OBLIGATORIAS) return;
+      if (indice < this.cupoReemplazoPropuestas) return;
       this.borradoresPropuestas.splice(indice, 1);
+    },
+    prepararBorradoresEstudiante() {
+      if (!this.puedeEnviarNuevaPropuesta) return;
+      if (this.propuestasEstudiante.length === 0) {
+        this.borradoresPropuestas = crearBorradoresIniciales(MIN_PROPUESTAS_OBLIGATORIAS);
+      } else if (this.tienePropuestasRechazadasEstudiante) {
+        this.borradoresPropuestas = crearBorradoresIniciales(this.cupoReemplazoPropuestas);
+      }
     },
     formatearFecha(fechaIso) {
       if (!fechaIso) return '';
@@ -422,6 +539,14 @@ createApp({
       this.seccionSeleccionadaId = null;
       this.estudianteSeleccionadoId = null;
       this.observacionesDocente = {};
+      this.propuestasComision = [];
+      this.cargandoPropuestasComision = false;
+      this.evaluandoComisionId = null;
+      this.observacionesComision = {};
+      this.mostrarHistorialDocente = false;
+      this.cargandoHistorialDocente = false;
+      this.estudiantesHistorialDocente = [];
+      this.estudianteHistorialSeleccionadoId = null;
       this.errorDocente = '';
       this.mensajeDocenteOk = '';
     },
@@ -642,6 +767,10 @@ createApp({
             await this.cargarPropuestasPrimerFiltroDocente();
           }
 
+          if (this.esDocenteComision) {
+            await this.cargarPropuestasComision();
+          }
+
           return;
         }
 
@@ -799,8 +928,132 @@ createApp({
             : `La propuesta "${propuesta.titulo}" fue rechazada con su motivo para el alumno.`;
 
         await this.cargarPropuestasPrimerFiltroDocente();
+        if (this.esDocenteComision) {
+          await this.cargarPropuestasComision();
+        }
+        if (this.mostrarHistorialDocente) {
+          await this.cargarHistorialTodosEstudiantesDocente();
+        }
       } finally {
         this.evaluandoPropuestaId = null;
+      }
+    },
+    async cargarPropuestasComision() {
+      this.cargandoPropuestasComision = true;
+      this.errorDocente = '';
+
+      try {
+        const { data: propuestas, error: errProp } = await sb
+          .from('propuestas')
+          .select('*')
+          .eq('etapa_actual', 'comision')
+          .eq('estatus', 'pendiente')
+          .order('id', { ascending: true });
+
+        if (errProp) {
+          console.error('Error consultando propuestas en comisión:', errProp);
+          this.errorDocente = 'No se pudieron cargar las propuestas para evaluación de comisión.';
+          return;
+        }
+
+        if (!propuestas || propuestas.length === 0) {
+          this.propuestasComision = [];
+          return;
+        }
+
+        const idsEstudiantes = [...new Set(propuestas.map(p => p.estudiante_id))];
+
+        const { data: estudiantesData, error: errEst } = await sb
+          .from('estudiantes')
+          .select('id, nombre, apellido, cedula, seccion_id')
+          .in('id', idsEstudiantes);
+
+        if (errEst) {
+          console.error('Error consultando estudiantes de propuestas en comisión:', errEst);
+          this.errorDocente = 'No se pudieron cargar los datos de estudiantes de comisión.';
+          return;
+        }
+
+        const idsSecciones = [...new Set((estudiantesData || []).map(e => e.seccion_id).filter(Boolean))];
+        let mapaSecciones = {};
+
+        if (idsSecciones.length > 0) {
+          const { data: seccionesData, error: errSec } = await sb
+            .from('secciones')
+            .select('id, codigo_seccion')
+            .in('id', idsSecciones);
+
+          if (!errSec && seccionesData) {
+            seccionesData.forEach(s => {
+              mapaSecciones[s.id] = s.codigo_seccion;
+            });
+          }
+        }
+
+        const mapaEstudiantes = {};
+        (estudiantesData || []).forEach(est => {
+          mapaEstudiantes[est.id] = {
+            nombreCompleto: `${est.nombre || ''} ${est.apellido || ''}`.trim() || 'Estudiante',
+            cedula: est.cedula || '',
+            codigoSeccion: mapaSecciones[est.seccion_id] || (est.seccion_id ? `ID ${est.seccion_id}` : '')
+          };
+        });
+
+        this.propuestasComision = propuestas.map(p => {
+          const estInfo = mapaEstudiantes[p.estudiante_id] || {};
+          if (this.observacionesComision[p.id] === undefined) {
+            this.observacionesComision[p.id] = p.observacion_comision || '';
+          }
+          return {
+            ...p,
+            estudianteNombre: estInfo.nombreCompleto || 'Estudiante',
+            estudianteCedula: estInfo.cedula || '',
+            codigoSeccion: estInfo.codigoSeccion || ''
+          };
+        });
+      } finally {
+        this.cargandoPropuestasComision = false;
+      }
+    },
+    async evaluarPropuestaComision(propuesta, estatusFinal) {
+      this.errorDocente = '';
+      this.mensajeDocenteOk = '';
+
+      const obs = (this.observacionesComision[propuesta.id] || '').trim();
+      if ((estatusFinal === 'aprobado_con_modificacion' || estatusFinal === 'rechazado') && !obs) {
+        this.errorDocente = 'Debes registrar la observación de la comisión al aprobar con modificación o rechazar una propuesta.';
+        return;
+      }
+
+      this.evaluandoComisionId = propuesta.id;
+      try {
+        const payload = {
+          estatus: estatusFinal,
+          etapa_actual: 'finalizado',
+          observacion_comision: obs || null,
+          actualizado_en: new Date().toISOString()
+        };
+
+        const { error } = await sb
+          .from('propuestas')
+          .update(payload)
+          .eq('id', propuesta.id);
+
+        if (error) {
+          console.error('Error evaluando propuesta en comisión:', error);
+          this.errorDocente = `No se pudo guardar el dictamen de comisión: ${error.message}`;
+          return;
+        }
+
+        this.observacionesComision[propuesta.id] = '';
+        this.mensajeDocenteOk = `Dictamen registrado (${this.textoEstatus(estatusFinal)}) para la propuesta "${propuesta.titulo}".`;
+
+        await this.cargarPropuestasComision();
+        if (this.mostrarHistorialDocente) {
+          await this.cargarHistorialTodosEstudiantesDocente();
+        }
+      } finally {
+        this.evaluandoComisionId = null;
       }
     },
     async cargarPropuestasEstudiante(estudianteId) {
@@ -815,6 +1068,7 @@ createApp({
         console.error('Error cargando propuestas del estudiante:', error);
       } else {
         this.propuestasEstudiante = data || [];
+        this.prepararBorradoresEstudiante();
       }
       this.cargandoPropuestas = false;
     },
@@ -828,11 +1082,16 @@ createApp({
         return;
       }
 
-      for (let i = 0; i < MIN_PROPUESTAS_OBLIGATORIAS; i++) {
+      const requeridasObligatorias = this.propuestasEstudiante.length === 0
+        ? MIN_PROPUESTAS_OBLIGATORIAS
+        : this.cupoReemplazoPropuestas;
+
+      for (let i = 0; i < requeridasObligatorias; i++) {
         const tituloOblig = (this.borradoresPropuestas[i]?.titulo || '').trim();
         const descOblig = (this.borradoresPropuestas[i]?.descripcion || '').trim();
+        const numeroProp = this.numeroInicialNuevaPropuesta + i;
         if (!tituloOblig || !descOblig) {
-          this.errorPropuesta = `Debes completar obligatoriamente el título y la descripción de las 3 propuestas (revisa la Propuesta ${i + 1}).`;
+          this.errorPropuesta = `Debes completar obligatoriamente el título y la descripción de la Propuesta ${numeroProp}.`;
           return;
         }
       }
@@ -841,9 +1100,10 @@ createApp({
       for (let i = 0; i < this.borradoresPropuestas.length; i++) {
         const titulo = (this.borradoresPropuestas[i].titulo || '').trim();
         const descripcion = (this.borradoresPropuestas[i].descripcion || '').trim();
+        const numeroProp = this.numeroInicialNuevaPropuesta + i;
 
         if (!titulo || !descripcion) {
-          this.errorPropuesta = `En la Propuesta ${i + 1} debes completar tanto el título como la descripción.`;
+          this.errorPropuesta = `En la Propuesta ${numeroProp} debes completar tanto el título como la descripción.`;
           return;
         }
 
@@ -870,8 +1130,7 @@ createApp({
           return;
         }
 
-        this.borradoresPropuestas = crearBorradoresIniciales();
-        this.mensajePropuestaOk = `${propuestasCompletas.length} propuestas registradas correctamente.`;
+        this.mensajePropuestaOk = `${propuestasCompletas.length} ${propuestasCompletas.length === 1 ? 'propuesta registrada' : 'propuestas registradas'} correctamente.`;
         await this.cargarPropuestasEstudiante(this.usuarioAuth.id);
       } finally {
         this.guardandoPropuesta = false;
