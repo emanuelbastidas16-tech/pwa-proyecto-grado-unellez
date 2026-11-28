@@ -1,49 +1,186 @@
 <div>
   <div class="info-list">
     <p><strong>Tipo de cuenta:</strong> Estudiante</p>
-    <p><strong>Cédula:</strong> {{ perfilEstudiante.cedula }}</p>
-    <p>
-      <strong>Sección:</strong>
-      {{ perfilEstudiante.secciones ? perfilEstudiante.secciones.codigo_seccion : ('ID ' + perfilEstudiante.seccion_id) }}
+    <p v-if="perfilEstudiante">
+      <strong>Cédula:</strong> {{ perfilEstudiante.cedula }}
     </p>
+    <p v-if="perfilEstudiante && perfilEstudiante.secciones">
+      <strong>Sección asignada:</strong> {{ perfilEstudiante.secciones.codigo_seccion }}
+    </p>
+    <p v-else-if="perfilEstudiante">
+      <strong>Sección asignada ID:</strong> {{ perfilEstudiante.seccion_id }}
+    </p>
+
     <p v-if="fechaLimiteEfectivaSeccion">
-      <strong>Fecha límite de entrega de la sección:</strong> {{ formatearFecha(fechaLimiteEfectivaSeccion) }}
-      <span v-if="entregaSeriaADestiempo" class="role-tag badge-pendiente" style="margin-top: 0; margin-left: 6px;">
-        Plazo vencido (se marcará a destiempo)
+      <strong>Fecha límite de entrega de propuestas:</strong>
+      <span style="margin-left: 4px;">{{ formatearFecha(fechaLimiteEfectivaSeccion) }}</span>
+      <span
+        v-if="entregaSeriaADestiempo"
+        class="role-tag badge-rechazado"
+        style="margin-top: 0; margin-left: 6px;"
+      >
+        Plazo cumplido (entrega a destiempo)
       </span>
     </p>
   </div>
 
   <hr class="divider" />
 
-  <div v-if="mensajePropuestaOk" class="alert-success">
-    {{ mensajePropuestaOk }}
-  </div>
+  <div v-if="mensajePropuestaOk" class="alert-success">{{ mensajePropuestaOk }}</div>
+  <div v-if="errorPropuesta" class="alert-error">{{ errorPropuesta }}</div>
 
-  <div v-if="!cargandoPropuestas && !puedeEnviarNuevaPropuesta" class="alert-waiting" style="margin-top: 0; margin-bottom: 16px;">
-    <p style="font-size: 0.9rem; line-height: 1.45;">
-      {{ motivoBloqueoNuevaPropuesta }}
+  <!-- Opción cuando la Comisión aprobó 1 o más propuestas -->
+  <div
+    v-if="puedeElegirDefensaPresencial"
+    class="proposal-form-box"
+    style="border-color: #0d9488; background: #f0fdfa;"
+  >
+    <h3 style="margin-bottom: 6px; color: #115e59;">
+      ¡Tienes {{ propuestasAprobadasComisionEstudiante.length }}
+      {{ propuestasAprobadasComisionEstudiante.length === 1 ? 'propuesta aprobada' : 'propuestas aprobadas' }} por la Comisión!
+    </h3>
+    <p class="subtitle" style="margin-bottom: 10px; color: #134e4a;">
+      Puedes continuar directamente a la fase de <strong>Defensa Presencial</strong> con
+      {{ propuestasAprobadasComisionEstudiante.length === 1 ? 'la propuesta que ya tienes aprobada' : 'las propuestas que ya tienes aprobadas' }}
+      <span v-if="puedeEnviarNuevaPropuesta">
+        , o si lo prefieres puedes enviar <strong>{{ cupoReemplazoPropuestas }}</strong>
+        {{ cupoReemplazoPropuestas === 1 ? 'nueva propuesta' : 'nuevas propuestas' }} abajo para intentar llegar a la defensa presencial con tus 3 propuestas aprobadas.
+      </span>
     </p>
+
+    <div class="action-row">
+      <button
+        type="button"
+        class="btn btn-success"
+        :disabled="avanzandoDefensa"
+        @click="avanzarADefensaPresencial"
+      >
+        {{ avanzandoDefensa ? 'Procesando pase a defensa...' : 'Continuar a Defensa Presencial con lo aprobado' }}
+      </button>
+    </div>
   </div>
 
-  <h3 style="margin-bottom: 10px;">Historial de mis propuestas de grado</h3>
+  <!-- Aviso cuando ya confirmó su pase a Defensa Presencial -->
+  <div
+    v-if="yaEstaEnDefensaPresencial"
+    class="alert-success"
+  >
+    <strong>Fase actual: Defensa Presencial.</strong>
+    Tienes {{ propuestasEnDefensaEstudiante.length }}
+    {{ propuestasEnDefensaEstudiante.length === 1 ? 'propuesta lista' : 'propuestas listas' }}
+    para presentar ante el jurado en la defensa presencial.
+  </div>
 
-  <p v-if="cargandoPropuestas" class="subtitle">Cargando propuestas...</p>
+  <!-- Formulario para enviar las propuestas -->
+  <div v-if="puedeEnviarNuevaPropuesta" class="proposal-form-box">
+    <h3 style="margin-bottom: 6px;">
+      {{ propuestasEstudiante.length === 0 ? 'Registrar propuestas de título (Ronda 1)' : 'Registrar nuevas propuestas de reemplazo (Ronda ' + siguienteRondaEstudiante + ')' }}
+    </h3>
 
-  <div v-else-if="propuestasEstudiante.length === 0" class="proposal-item">
-    <p class="subtitle" style="margin-bottom: 0;">
-      Aún no tienes propuestas registradas. Completa las 3 propuestas obligatorias abajo para enviar tu Ronda 1.
+    <p class="subtitle" v-if="propuestasEstudiante.length === 0">
+      Debes ingresar obligatoriamente <strong>3 propuestas</strong> (Propuesta 1, Propuesta 2 y Propuesta 3). Si deseas, puedes añadir más propuestas adicionales.
     </p>
+    <p class="subtitle" v-else>
+      Tienes <strong>{{ propuestasNoRechazadasEstudiante.length }}</strong>
+      {{ propuestasNoRechazadasEstudiante.length === 1 ? 'propuesta activa o aprobada' : 'propuestas activas o aprobadas' }}.
+      Puedes registrar <strong>{{ cupoReemplazoPropuestas }}</strong>
+      {{ cupoReemplazoPropuestas === 1 ? 'nueva propuesta obligatoria' : 'nuevas propuestas obligatorias' }}
+      para completar tus 3 propuestas (manteniendo el historial de las anteriores).
+    </p>
+
+    <div v-if="entregaSeriaADestiempo" class="alert-waiting" style="margin-bottom: 12px;">
+      <strong>Aviso de entrega a destiempo:</strong> La fecha límite de entrega ya venció. Si envías tus propuestas ahora, quedarán registradas con la etiqueta <strong>A destiempo</strong>.
+    </div>
+
+    <form @submit.prevent="crearPropuestasEstudiante">
+      <div
+        v-for="(item, index) in borradoresPropuestas"
+        :key="index"
+        class="proposal-draft-card"
+      >
+        <div class="proposal-draft-header">
+          <strong>
+            Propuesta {{ numeroInicialNuevaPropuesta + index }}
+            <span v-if="index < cupoReemplazoPropuestas" style="color: #b91c1c;">*</span>
+            <span v-else style="color: #64748b; font-weight: normal; font-size: 0.85rem;">(Adicional)</span>
+          </strong>
+
+          <button
+            v-if="index >= cupoReemplazoPropuestas"
+            type="button"
+            class="btn btn-danger"
+            style="width: auto; padding: 4px 10px; font-size: 0.8rem;"
+            @click="eliminarBloquePropuesta(index)"
+          >
+            Quitar
+          </button>
+        </div>
+
+        <div class="field">
+          <label :for="'tituloProp_' + index">Título de la propuesta</label>
+          <input
+            :id="'tituloProp_' + index"
+            type="text"
+            v-model.trim="item.titulo"
+            placeholder="Ej. Sistema web progresivo para la gestión académica..."
+            required
+          />
+        </div>
+
+        <div class="field" style="margin-bottom: 0;">
+          <label :for="'descProp_' + index">Descripción / Planteamiento breve</label>
+          <textarea
+            :id="'descProp_' + index"
+            rows="3"
+            maxlength="500"
+            v-model.trim="item.descripcion"
+            placeholder="Describe el problema, objetivo y alcance de la propuesta (máx. 500 caracteres)..."
+            required
+          ></textarea>
+        </div>
+      </div>
+
+      <div class="action-row" style="margin-top: 12px;">
+        <button
+          type="button"
+          class="btn btn-secondary"
+          :disabled="guardandoPropuesta"
+          @click="agregarBloquePropuesta"
+        >
+          + Agregar otra propuesta
+        </button>
+
+        <button type="submit" class="btn btn-success" :disabled="guardandoPropuesta">
+          {{ guardandoPropuesta ? 'Enviando propuestas...' : (borradoresPropuestas.length === 1 ? 'Enviar 1 propuesta a revisión' : 'Enviar ' + borradoresPropuestas.length + ' propuestas a revisión') }}
+        </button>
+      </div>
+    </form>
   </div>
 
-  <div v-else>
+  <!-- Aviso cuando no puede enviar más propuestas en este momento -->
+  <div v-else class="alert-waiting" style="margin-bottom: 16px;">
+    <strong>Envío de propuestas pausado:</strong> {{ motivoBloqueoNuevaPropuesta }}
+  </div>
+
+  <!-- Historial completo de propuestas enviadas -->
+  <div>
+    <h3 style="margin-bottom: 8px;">Historial de mis propuestas ({{ propuestasEstudiante.length }})</h3>
+
+    <p v-if="cargandoPropuestas" class="subtitle">Cargando propuestas...</p>
+
+    <div v-else-if="propuestasEstudiante.length === 0" class="proposal-item">
+      <p class="subtitle" style="margin-bottom: 0;">
+        Aún no has registrado ninguna propuesta de título.
+      </p>
+    </div>
+
     <div
-      v-for="(prop, index) in propuestasEstudiante"
+      v-for="(prop, idx) in propuestasEstudiante"
       :key="prop.id"
       class="proposal-item"
     >
       <div style="display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; align-items: center;">
-        <strong>Propuesta {{ index + 1 }} — {{ prop.titulo }}</strong>
+        <strong>Propuesta {{ idx + 1 }} — {{ prop.titulo }}</strong>
         <div>
           <span
             class="role-tag"
@@ -54,7 +191,7 @@
           </span>
           <span
             v-if="prop.a_destiempo"
-            class="role-tag badge-pendiente"
+            class="role-tag badge-rechazado"
             style="margin-top: 0;"
           >
             A destiempo
@@ -85,83 +222,5 @@
         <strong>Dictamen / Observación de la comisión:</strong> {{ prop.observacion_comision }}
       </div>
     </div>
-  </div>
-
-  <div v-if="!cargandoPropuestas && puedeEnviarNuevaPropuesta">
-    <hr class="divider" />
-    <h3 style="margin-bottom: 6px;">
-      {{ tienePropuestasRechazadasEstudiante ? ('Registrar propuesta de reemplazo (Ronda ' + siguienteRondaEstudiante + ')') : ('Registrar propuestas de grado (Ronda ' + siguienteRondaEstudiante + ')') }}
-    </h3>
-    <p v-if="tienePropuestasRechazadasEstudiante" class="subtitle">
-      Una o más de tus propuestas anteriores fueron rechazadas y se mantienen en tu historial. Completa la <strong>Propuesta {{ numeroInicialNuevaPropuesta }}</strong> para continuar.
-    </p>
-    <p v-else class="subtitle">
-      Debes completar obligatoriamente las <strong>3 propuestas</strong> con sus respectivas descripciones. Si deseas añadir otra, usa el botón <strong>+</strong> al final de la última propuesta.
-    </p>
-
-    <div v-if="errorPropuesta" class="alert-error">{{ errorPropuesta }}</div>
-
-    <form @submit.prevent="crearPropuestasEstudiante">
-      <div
-        v-for="(item, index) in borradoresPropuestas"
-        :key="index"
-        class="proposal-form-box"
-      >
-        <div class="proposal-form-header">
-          <strong>
-            Propuesta {{ numeroInicialNuevaPropuesta + index }}
-            <span style="color: #b91c1c; font-weight: 600; font-size: 0.82rem;">
-              {{ index < cupoReemplazoPropuestas ? '(Obligatoria)' : '(Adicional)' }}
-            </span>
-          </strong>
-          <button
-            v-if="index >= cupoReemplazoPropuestas"
-            type="button"
-            class="btn btn-danger"
-            @click="eliminarBloquePropuesta(index)"
-          >
-            Quitar
-          </button>
-        </div>
-
-        <div class="field">
-          <label :for="'tituloPropuesta_' + index">Título de la propuesta {{ numeroInicialNuevaPropuesta + index }}</label>
-          <input
-            :id="'tituloPropuesta_' + index"
-            type="text"
-            v-model.trim="item.titulo"
-            placeholder="Ej. Aplicación web progresiva para la gestión de..."
-            required
-          />
-        </div>
-
-        <div class="field" style="margin-bottom: 0;">
-          <label :for="'descripcionPropuesta_' + index">Descripción de la propuesta {{ numeroInicialNuevaPropuesta + index }}</label>
-          <textarea
-            :id="'descripcionPropuesta_' + index"
-            rows="3"
-            v-model.trim="item.descripcion"
-            placeholder="Describe brevemente el problema, objetivo y alcance..."
-            required
-          ></textarea>
-        </div>
-      </div>
-
-      <div class="add-proposal-row">
-        <button
-          type="button"
-          class="btn btn-secondary"
-          style="padding: 8px 14px; font-size: 0.9rem;"
-          @click="agregarBloquePropuesta"
-          title="Agregar otra propuesta"
-        >
-          + Agregar propuesta
-        </button>
-      </div>
-
-      <button type="submit" class="btn btn-primary" :disabled="guardandoPropuesta">
-        {{ guardandoPropuesta ? 'Enviando propuestas...' : ('Enviar ' + (borradoresPropuestas.length === 1 ? 'propuesta' : 'propuestas') + ' (Ronda ' + siguienteRondaEstudiante + ')') }}
-      </button>
-    </form>
   </div>
 </div>

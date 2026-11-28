@@ -63,23 +63,23 @@
 
     <form @submit.prevent="registrarDocente">
       <div class="field">
-        <label for="docNombre">Nombres</label>
+        <label for="docNombre">Nombre</label>
         <input
           id="docNombre"
           type="text"
           v-model.trim="formRegistroDocente.nombre"
-          placeholder="Ej. María Elena"
+          placeholder="Ej. María"
           required
         />
       </div>
 
       <div class="field">
-        <label for="docApellido">Apellidos</label>
+        <label for="docApellido">Apellido</label>
         <input
           id="docApellido"
           type="text"
           v-model.trim="formRegistroDocente.apellido"
-          placeholder="Ej. Pérez Rojas"
+          placeholder="Ej. Pérez"
           required
         />
       </div>
@@ -90,7 +90,7 @@
           id="docCedula"
           type="text"
           v-model.trim="formRegistroDocente.cedula"
-          placeholder="Ej. V-12345678"
+          placeholder="Ej. 12345678"
           required
         />
       </div>
@@ -156,8 +156,8 @@
           id="docPassword"
           type="password"
           v-model="formRegistroDocente.password"
-          placeholder="Mínimo 6 caracteres"
-          minlength="6"
+          placeholder="Mínimo 8 caracteres"
+          minlength="8"
           required
         />
       </div>

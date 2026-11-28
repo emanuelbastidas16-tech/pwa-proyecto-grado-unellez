@@ -18,6 +18,17 @@ function isoToDatetimeLocal(fechaIso) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+function ordenarPropuestasCronologicamente(lista = []) {
+  return [...lista].sort((a, b) => {
+    const tiempoA = a?.creado_en ? new Date(a.creado_en).getTime() : 0;
+    const tiempoB = b?.creado_en ? new Date(b.creado_en).getTime() : 0;
+    if (!Number.isNaN(tiempoA) && !Number.isNaN(tiempoB) && tiempoA !== tiempoB) {
+      return tiempoA - tiempoB;
+    }
+    return (Number(a?.id) || 0) - (Number(b?.id) || 0);
+  });
+}
+
 createApp({
   data() {
     return {
@@ -62,6 +73,7 @@ createApp({
       propuestasEstudiante: [],
       cargandoPropuestas: false,
       guardandoPropuesta: false,
+      avanzandoDefensa: false,
       errorPropuesta: '',
       mensajePropuestaOk: '',
       borradoresPropuestas: crearBorradoresIniciales(),
@@ -170,6 +182,29 @@ createApp({
     propuestasNoRechazadasEstudiante() {
       return this.propuestasEstudiante.filter(p => p.estatus !== 'rechazado');
     },
+    propuestasAprobadasComisionEstudiante() {
+      return this.propuestasEstudiante.filter(
+        p =>
+          (p.estatus === 'aprobado' || p.estatus === 'aprobado_con_modificacion') &&
+          p.etapa_actual !== 'defensa_presencial'
+      );
+    },
+    propuestasEnDefensaEstudiante() {
+      return this.propuestasEstudiante.filter(
+        p => p.etapa_actual === 'defensa_presencial'
+      );
+    },
+    yaEstaEnDefensaPresencial() {
+      return this.propuestasEnDefensaEstudiante.length > 0;
+    },
+    puedeElegirDefensaPresencial() {
+      if (this.yaEstaEnDefensaPresencial) return false;
+      const tienePendientesRevision = this.propuestasEstudiante.some(
+        p => p.estatus === 'pendiente'
+      );
+      if (tienePendientesRevision) return false;
+      return this.propuestasAprobadasComisionEstudiante.length > 0;
+    },
     tienePropuestasRechazadasEstudiante() {
       return this.propuestasEstudiante.some(p => p.estatus === 'rechazado');
     },
@@ -187,19 +222,17 @@ createApp({
     },
     puedeEnviarNuevaPropuesta() {
       if (this.cargandoPropuestas) return true;
+      if (this.yaEstaEnDefensaPresencial) return false;
       if (!this.propuestasEstudiante.length) return true;
-      const tienePendiente = this.propuestasEstudiante.some(p => p.estatus === 'pendiente');
-      const tieneAprobada = this.propuestasEstudiante.some(
-        p => p.estatus === 'aprobado' || p.estatus === 'aprobado_con_modificacion'
-      );
-      return !tienePendiente && !tieneAprobada;
+
+      return this.propuestasNoRechazadasEstudiante.length < MIN_PROPUESTAS_OBLIGATORIAS;
     },
     motivoBloqueoNuevaPropuesta() {
-      if (this.propuestasEstudiante.some(p => p.estatus === 'pendiente')) {
-        return 'Ya tienes propuestas en revisión (estatus: Pendiente). Debes esperar el resultado de la evaluación antes de enviar nuevas propuestas.';
+      if (this.yaEstaEnDefensaPresencial) {
+        return 'Ya confirmaste tu pase a Defensa Presencial con tus propuestas aprobadas.';
       }
-      if (this.propuestasEstudiante.some(p => p.estatus === 'aprobado' || p.estatus === 'aprobado_con_modificacion')) {
-        return '¡Felicitaciones! Ya cuentas con una propuesta aprobada, por lo que no necesitas enviar nuevas propuestas.';
+      if (this.propuestasNoRechazadasEstudiante.length >= MIN_PROPUESTAS_OBLIGATORIAS) {
+        return 'Ya tienes tus 3 propuestas activas o aprobadas. Si alguna es rechazada por el docente o por la comisión, se habilitará el formulario para reemplazarla.';
       }
       return '';
     }
@@ -320,6 +353,29 @@ createApp({
       this.estudianteHistorialSeleccionadoId =
         this.estudianteHistorialSeleccionadoId === estudianteId ? null : estudianteId;
     },
+    construirMapaNumeracionPorEstudiante(todasPropuestas = []) {
+      const agrupadas = new Map();
+      for (const prop of todasPropuestas) {
+        if (!agrupadas.has(prop.estudiante_id)) {
+          agrupadas.set(prop.estudiante_id, []);
+        }
+        agrupadas.get(prop.estudiante_id).push(prop);
+      }
+
+      const mapaNumero = new Map();
+      for (const [estudianteId, lista] of agrupadas.entries()) {
+        const ordenadas = ordenarPropuestasCronologicamente(lista);
+        ordenadas.forEach((p, idx) => {
+          mapaNumero.set(p.id, idx + 1);
+        });
+        agrupadas.set(estudianteId, ordenadas.map((p, idx) => ({
+          ...p,
+          numero_propuesta: idx + 1
+        })));
+      }
+
+      return { mapaNumero, agrupadas };
+    },
     async cargarHistorialTodosEstudiantesDocente() {
       if (!this.seccionesDocente.length) {
         this.estudiantesHistorialDocente = [];
@@ -368,13 +424,7 @@ createApp({
           return;
         }
 
-        const propuestasPorEstudiante = new Map();
-        (todasPropuestas || []).forEach(prop => {
-          if (!propuestasPorEstudiante.has(prop.estudiante_id)) {
-            propuestasPorEstudiante.set(prop.estudiante_id, []);
-          }
-          propuestasPorEstudiante.get(prop.estudiante_id).push(prop);
-        });
+        const { agrupadas: propuestasPorEstudiante } = this.construirMapaNumeracionPorEstudiante(todasPropuestas || []);
 
         this.estudiantesHistorialDocente = estudiantesSec.map(est => ({
           id: est.id,
@@ -409,7 +459,7 @@ createApp({
       if (!this.puedeEnviarNuevaPropuesta) return;
       if (this.propuestasEstudiante.length === 0) {
         this.borradoresPropuestas = crearBorradoresIniciales(MIN_PROPUESTAS_OBLIGATORIAS);
-      } else if (this.tienePropuestasRechazadasEstudiante) {
+      } else {
         this.borradoresPropuestas = crearBorradoresIniciales(this.cupoReemplazoPropuestas);
       }
     },
@@ -445,7 +495,7 @@ createApp({
         primer_filtro: 'Primer filtro (Docente de sección)',
         segundo_filtro: 'Segundo filtro (Comisión / Jurado)',
         defensa_presencial: 'Defensa presencial',
-        finalizado: 'Evaluación finalizada'
+        finalizado: 'Evaluación de comisión finalizada'
       };
       return mapa[etapa] || etapa || 'Primer filtro';
     },
@@ -557,6 +607,7 @@ createApp({
       this.guardandoFechaSeccionId = null;
       this.errorPerfil = '';
       this.propuestasEstudiante = [];
+      this.avanzandoDefensa = false;
       this.errorPropuesta = '';
       this.mensajePropuestaOk = '';
       this.borradoresPropuestas = crearBorradoresIniciales();
@@ -873,12 +924,10 @@ createApp({
 
         const idsEstudiantes = estudiantesSec.map(e => e.id);
 
-        const { data: propuestas, error: errProp } = await sb
+        const { data: todasPropuestasEst, error: errProp } = await sb
           .from('propuestas')
           .select('*')
           .in('estudiante_id', idsEstudiantes)
-          .eq('etapa_actual', 'primer_filtro')
-          .eq('estatus', 'pendiente')
           .order('id', { ascending: true });
 
         if (errProp) {
@@ -887,13 +936,20 @@ createApp({
           return;
         }
 
-        this.propuestasPrimerFiltro = (propuestas || []).map(p => {
+        const { mapaNumero } = this.construirMapaNumeracionPorEstudiante(todasPropuestasEst || []);
+
+        const pendientesPrimerFiltro = (todasPropuestasEst || []).filter(
+          p => p.etapa_actual === 'primer_filtro' && p.estatus === 'pendiente'
+        );
+
+        this.propuestasPrimerFiltro = pendientesPrimerFiltro.map(p => {
           const estInfo = mapaEstudiantes[p.estudiante_id] || {};
           if (this.observacionesDocente[p.id] === undefined) {
             this.observacionesDocente[p.id] = p.observacion_docente || '';
           }
           return {
             ...p,
+            numero_propuesta: mapaNumero.get(p.id) || 1,
             seccion_id: estInfo.seccion_id || null,
             estudianteNombre: estInfo.nombreCompleto || 'Estudiante',
             estudianteCedula: estInfo.cedula || '',
@@ -974,12 +1030,14 @@ createApp({
           .from('propuestas')
           .select('*')
           .eq('etapa_actual', 'segundo_filtro')
-          .eq('estatus', 'pendiente')
+          .neq('estatus', 'aprobado')
+          .neq('estatus', 'aprobado_con_modificacion')
+          .neq('estatus', 'rechazado')
           .order('id', { ascending: true });
 
         if (errProp) {
           console.error('Error consultando propuestas en comisión:', errProp);
-          this.errorDocente = 'No se pudieron cargar las propuestas para evaluación de comisión.';
+          this.errorDocente = `No se pudieron cargar las propuestas para comisión: ${errProp.message}`;
           return;
         }
 
@@ -989,21 +1047,37 @@ createApp({
           return;
         }
 
-        const idsEstudiantes = [...new Set(propuestas.map(p => p.estudiante_id))];
+        const idsEstudiantes = [...new Set(propuestas.map(p => p.estudiante_id).filter(Boolean))];
 
-        const { data: estudiantesData, error: errEst } = await sb
-          .from('estudiantes')
-          .select('id, nombre, apellido, cedula, seccion_id')
-          .in('id', idsEstudiantes);
+        let mapaNumero = new Map();
+        if (idsEstudiantes.length > 0) {
+          const { data: todasDelEstudiante, error: errTodas } = await sb
+            .from('propuestas')
+            .select('id, estudiante_id, creado_en')
+            .in('estudiante_id', idsEstudiantes)
+            .order('id', { ascending: true });
 
-        if (errEst) {
-          console.error('Error consultando estudiantes de propuestas en comisión:', errEst);
-          this.errorDocente = 'No se pudieron cargar los datos de estudiantes de comisión.';
-          return;
+          if (!errTodas && todasDelEstudiante) {
+            mapaNumero = this.construirMapaNumeracionPorEstudiante(todasDelEstudiante).mapaNumero;
+          }
         }
 
-        const idsSecciones = [...new Set((estudiantesData || []).map(e => e.seccion_id).filter(Boolean))];
-        let mapaSecciones = {};
+        let estudiantesData = [];
+        if (idsEstudiantes.length > 0) {
+          const { data: estRows, error: errEst } = await sb
+            .from('estudiantes')
+            .select('id, nombre, apellido, cedula, seccion_id')
+            .in('id', idsEstudiantes);
+
+          if (errEst) {
+            console.warn('No se pudieron cargar todos los datos de estudiantes en comisión:', errEst);
+          } else {
+            estudiantesData = estRows || [];
+          }
+        }
+
+        const idsSecciones = [...new Set(estudiantesData.map(e => e.seccion_id).filter(Boolean))];
+        const mapaSecciones = {};
 
         if (idsSecciones.length > 0) {
           const { data: seccionesData, error: errSec } = await sb
@@ -1019,7 +1093,7 @@ createApp({
         }
 
         const mapaEstudiantes = {};
-        (estudiantesData || []).forEach(est => {
+        estudiantesData.forEach(est => {
           mapaEstudiantes[est.id] = {
             nombreCompleto: `${est.nombre || ''} ${est.apellido || ''}`.trim() || 'Estudiante',
             cedula: est.cedula || '',
@@ -1034,6 +1108,7 @@ createApp({
           }
           return {
             ...p,
+            numero_propuesta: mapaNumero.get(p.id) || 1,
             estudianteNombre: estInfo.nombreCompleto || 'Estudiante',
             estudianteCedula: estInfo.cedula || '',
             codigoSeccion: estInfo.codigoSeccion || ''
@@ -1112,7 +1187,11 @@ createApp({
       if (error) {
         console.error('Error cargando propuestas del estudiante:', error);
       } else {
-        this.propuestasEstudiante = data || [];
+        const ordenadas = ordenarPropuestasCronologicamente(data || []);
+        this.propuestasEstudiante = ordenadas.map((p, idx) => ({
+          ...p,
+          numero_propuesta: idx + 1
+        }));
         this.prepararBorradoresEstudiante();
       }
       this.cargandoPropuestas = false;
@@ -1179,6 +1258,43 @@ createApp({
         await this.cargarPropuestasEstudiante(this.usuarioAuth.id);
       } finally {
         this.guardandoPropuesta = false;
+      }
+    },
+    async avanzarADefensaPresencial() {
+      this.errorPropuesta = '';
+      this.mensajePropuestaOk = '';
+
+      if (!this.usuarioAuth?.id) return;
+      if (!this.puedeElegirDefensaPresencial) {
+        this.errorPropuesta = 'Debes tener al menos una propuesta aprobada por la comisión para pasar a defensa presencial.';
+        return;
+      }
+
+      const idsAprobadas = this.propuestasAprobadasComisionEstudiante.map(p => p.id);
+      this.avanzandoDefensa = true;
+
+      try {
+        const { error } = await sb
+          .from('propuestas')
+          .update({
+            etapa_actual: 'defensa_presencial',
+            fase_votacion: 'defensa_presencial',
+            estatus: 'pendiente',
+            actualizado_en: new Date().toISOString()
+          })
+          .in('id', idsAprobadas);
+
+        if (error) {
+          console.error('Error avanzando propuestas a defensa presencial:', error);
+          this.errorPropuesta = `No se pudo confirmar el pase a defensa presencial: ${error.message}`;
+          return;
+        }
+
+        this.mensajePropuestaOk =
+          `¡Listo! ${idsAprobadas.length === 1 ? 'Tu propuesta aprobada pasó' : 'Tus propuestas aprobadas pasaron'} a la fase de Defensa Presencial.`;
+        await this.cargarPropuestasEstudiante(this.usuarioAuth.id);
+      } finally {
+        this.avanzandoDefensa = false;
       }
     },
     async cerrarSesion() {

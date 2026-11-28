@@ -204,7 +204,7 @@
                 style="margin-bottom: 10px;"
               >
                 <div style="display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; align-items: center;">
-                  <strong>Propuesta {{ idxHist + 1 }} — {{ propHist.titulo }}</strong>
+                  <strong>Propuesta {{ propHist.numero_propuesta || (idxHist + 1) }} — {{ propHist.titulo }}</strong>
                   <div>
                     <span
                       class="role-tag"
@@ -313,7 +313,7 @@
                 style="margin-bottom: 10px;"
               >
                 <div style="display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; align-items: center;">
-                  <strong>Propuesta {{ idx + 1 }} — {{ prop.titulo }}</strong>
+                  <strong>Propuesta {{ prop.numero_propuesta || (idx + 1) }} — {{ prop.titulo }}</strong>
                   <div>
                     <span class="role-tag badge-pendiente" style="margin-top: 0;">
                       Ronda {{ prop.ronda }}
@@ -423,7 +423,7 @@
               style="margin-bottom: 10px;"
             >
               <div style="display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; align-items: center;">
-                <strong>Propuesta {{ idxCom + 1 }} — {{ propCom.titulo }}</strong>
+                <strong>Propuesta {{ propCom.numero_propuesta || (idxCom + 1) }} — {{ propCom.titulo }}</strong>
                 <div>
                   <span class="role-tag badge-pendiente" style="margin-top: 0;">
                     Ronda {{ propCom.ronda }}
